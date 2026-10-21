@@ -1,0 +1,20 @@
+.build/
+.build-arm64/
+.build-x86/
+.build-universal/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.DS_Store
+test.md
+
+# Demo source media (keep gif/png, skip heavy originals)
+demo/*.mov
+demo/*.mp4
+dist/
+
+drafts/
+.mimocode/
+.reasonix/
+/tmp

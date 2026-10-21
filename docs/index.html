@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>editxr — a WYSIWYG Markdown editor for the terminal</title>
+<meta name="description" content="Render Markdown live as you type, edit sections with reviewable AI diffs, and never leave your shell. Native Swift, zero dependencies, macOS, Linux & Windows. Open source.">
+<link rel="icon" href="editxr.png">
+
+<!-- Social cards -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="editxr — a WYSIWYG Markdown editor for the terminal">
+<meta property="og:description" content="Markdown rendered as you type, AI edits you review as inline diffs, zero dependencies. macOS, Linux & Windows. Open source.">
+<meta property="og:url" content="https://editxr.org">
+<meta property="og:image" content="https://editxr.org/editxr.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="editxr — a WYSIWYG Markdown editor for the terminal">
+<meta name="twitter:description" content="Markdown rendered as you type, AI edits you review as inline diffs, zero dependencies. macOS, Linux & Windows. Open source.">
+<meta name="twitter:image" content="https://editxr.org/editxr.png">
+<link rel="alternate" type="text/markdown" href="/llms.txt" title="llms.txt">
+
+<!-- Structured data for search engines and AI agents -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "editxr",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "description": "A WYSIWYG Markdown editor for the terminal. It renders Markdown live as you type and edits whole sections with an LLM, shown as an inline diff you accept or reject. Native Swift, zero dependencies. Open source (MIT).",
+  "url": "https://editxr.org",
+  "downloadUrl": "https://github.com/pixdeo/editxr",
+  "codeRepository": "https://github.com/pixdeo/editxr",
+  "license": "https://opensource.org/licenses/MIT",
+  "programmingLanguage": "Swift",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Organization", "name": "Pixdeo LTD" }
+}
+</script>
+
+<style>
+  :root {
+    --bg: #1c1a18;
+    --surface: #262320;
+    --border: #3a352f;
+    --text: #ebe5db;
+    --muted: #8a8379;
+    --accent: #cc785c;
+    --accent-soft: rgba(204, 120, 92, 0.14);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 1.25rem; }
+  section { padding: 4rem 0; border-top: 1px solid var(--border); }
+
+  /* Hero */
+  .hero { text-align: center; padding: 5rem 0 4rem; border-top: 0; }
+  .hero img { width: min(420px, 80%); height: auto; }
+  .tagline { color: var(--muted); font-size: 1.05rem; margin: 0.5rem 0 2rem; }
+  .tagline b { color: var(--text); font-weight: 600; }
+
+  /* Install command */
+  .cmd {
+    display: flex; align-items: center; gap: .75rem;
+    max-width: 680px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: .8rem 1rem; text-align: left;
+  }
+  .cmd code { color: var(--text); font-size: .9rem; overflow-x: auto; white-space: nowrap; flex: 1; }
+  .cmd code .p { color: var(--accent); }
+  .cmd button {
+    flex: none; cursor: pointer; font-family: var(--mono); font-size: .8rem;
+    color: var(--muted); background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; padding: .3rem .6rem;
+  }
+  .cmd button:hover { color: var(--text); border-color: var(--accent); }
+
+  .actions { margin-top: 1.25rem; display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: .55rem 1.1rem; border-radius: 8px;
+    border: 1px solid var(--border); color: var(--text); font-size: .9rem;
+  }
+  .btn:hover { border-color: var(--accent); text-decoration: none; }
+  .btn.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .btn svg { vertical-align: -3px; margin-right: .5rem; }
+
+  h2 { font-size: 1.4rem; margin: 0 0 1.5rem; }
+  h2 .hash { color: var(--accent); }
+
+  /* Demo */
+  .sr-intro { color: var(--muted); font-size: .9rem; text-align: center; max-width: 640px; margin: 0 auto 2rem; }
+  .clips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+  .clips figure { margin: 0; }
+  .clips video { width: 100%; border: 1px solid var(--border); border-radius: 10px; display: block; }
+  .clips figcaption { color: var(--muted); font-size: .85rem; margin-top: .5rem; text-align: center; }
+  @media (max-width: 640px) { .clips { grid-template-columns: 1fr; } }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .feature {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.1rem 1.2rem;
+  }
+  .feature h3 { margin: 0 0 .4rem; font-size: 1rem; color: var(--accent); }
+  .feature p { margin: 0; color: var(--muted); font-size: .92rem; }
+
+  /* Steps */
+  ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: .75rem; }
+  ol.steps li {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: .85rem 1rem; color: var(--muted);
+  }
+  ol.steps li b { color: var(--text); }
+  ol.steps code, .inline { color: var(--accent); background: var(--accent-soft); padding: .1em .4em; border-radius: 4px; }
+
+  /* Install grid */
+  .install pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem; overflow-x: auto; color: var(--text); font-size: .88rem; margin: .5rem 0 1.25rem;
+  }
+  .install .label { color: var(--muted); font-size: .85rem; }
+  .install table { width: 100%; border-collapse: collapse; margin: .5rem 0 1.25rem; font-size: .88rem; }
+  .install th, .install td { text-align: left; padding: .55rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .install th { color: var(--muted); font-weight: 600; }
+  .install td code { color: var(--accent); background: var(--accent-soft); padding: .1em .4em; border-radius: 4px; }
+  .install td .note { color: var(--muted); display: block; margin-top: .25rem; }
+
+  footer { border-top: 1px solid var(--border); padding: 2.5rem 0 3rem; text-align: center; color: var(--muted); font-size: .85rem; }
+  footer a { color: var(--muted); }
+  footer a:hover { color: var(--accent); }
+</style>
+
+<!-- Analytics (self-hosted Umami) -->
+<script defer src="https://umami-analytics.lun.pixdeo.com/script.js" data-website-id="ce97f591-2321-44a6-a897-15847c6dd3bc"></script>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img src="editxr.png" alt="editxr">
+    <p class="tagline">A <b>WYSIWYG</b> Markdown editor for the terminal.<br/>100% <b>Swift</b>, zero dependencies. <b>macOS, Linux &amp; Windows.</b> <br/>AI Assistant integrated. Use any LLM you like.</p>
+
+    <div class="cmd">
+      <code id="cmd"><span class="p">curl</span> -fsSL https://raw.githubusercontent.com/pixdeo/editxr/main/install.sh | <span class="p">bash</span></code>
+      <button onclick="copyCmd(this)">copy</button>
+    </div>
+
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/pixdeo/editxr"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>View on GitHub</a>
+      <a class="btn" href="#install">Other ways to install</a>
+    </div>
+  </div>
+</header>
+
+<section class="demo">
+  <div class="wrap">
+    <p class="sr-intro">Short clips of editxr in use: live Markdown rendering, AI section editing as an inline diff, navigable links between files, themes, focus mode, the rendered/raw toggle, incremental find, and instant startup.</p>
+    <div class="clips">
+      <figure><video src="render.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Renders as you type</figcaption></figure>
+      <figure><video src="ai.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>AI section editing</figcaption></figure>
+      <figure><video src="links.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Linked notes (wikilinks)</figcaption></figure>
+      <figure><video src="themes.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Themes, light or dark</figcaption></figure>
+      <figure><video src="focus.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Focus mode</figcaption></figure>
+      <figure><video src="raw.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Rendered &harr; raw</figcaption></figure>
+      <figure><video src="find.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Incremental find</figcaption></figure>
+      <figure><video src="open.mp4" autoplay loop muted playsinline preload="metadata"></video><figcaption>Opens instantly</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="hash">#</span> What it does</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>Renders as you type</h3>
+        <p>Headings, lists, tables, and code styled in place — not in a split preview. The line you're on stays plain, editable text. Table columns line up even when the cells are full of emoji, because the widths are measured from your terminal.</p>
+      </div>
+      <div class="feature">
+        <h3>AI edits you review</h3>
+        <p>Select a section, describe the change, and accept or reject it as a red/green inline diff. No chat thread, nothing lands unapproved.</p>
+      </div>
+      <div class="feature">
+        <h3>Linked, like Obsidian</h3>
+        <p>[[wikilinks]] and [](file.md) links render collapsed and open in a tab on Ctrl+]. Fuzzy-find any file with Ctrl+O, cycle tabs, jump back with Ctrl+[ — a whole notes folder, navigable without leaving the shell.</p>
+      </div>
+      <div class="feature">
+        <h3>Outline &amp; file sidebar</h3>
+        <p>Dock a live outline of your headings, or a file explorer for the folder you opened. Alt+S focuses it, arrows or j/k move, Enter jumps to the heading or opens the file, Esc hands focus back to the text.</p>
+      </div>
+      <div class="feature">
+        <h3>Tabs, done right</h3>
+        <p>Tab indents and Shift+Tab outdents — or inserts a real tab, at a width you configure. Tabs are measured into the wrap math, and pasted text with odd line endings is normalized instead of corrupting the screen.</p>
+      </div>
+      <div class="feature">
+        <h3>Bring your own model</h3>
+        <p>LM Studio (local), OpenAI, OpenRouter, or an offline mock that needs no backend at all.</p>
+      </div>
+      <div class="feature">
+        <h3>12 themes, light or dark</h3>
+        <p>Clay, Dracula, Nord, Catppuccin, Tokyo Night and more — picked from a rounded command palette.</p>
+      </div>
+      <div class="feature">
+        <h3>Fast &amp; dependency-free</h3>
+        <p>A native Swift binary. It opens instantly and stays fast on large files. macOS, Linux &amp; Windows.</p>
+      </div>
+      <div class="feature">
+        <h3>Everything else</h3>
+        <p>Incremental find, HTML export, syntax highlighting, word wrap, and per-file cursor memory.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="hash">#</span> How it works</h2>
+    <ol class="steps">
+      <li><b><code>editxr notes.md</code></b> — open or create a file.</li>
+      <li><b>Type.</b> It renders live; the cursor line stays raw.</li>
+      <li><b><span class="inline">Ctrl+Space</span></b> — ask AI for an edit, review the diff, press <span class="inline">y</span> to keep it.</li>
+      <li><b><span class="inline">Ctrl+S</span></b> and you're done.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="install" id="install">
+  <div class="wrap">
+    <h2><span class="hash">#</span> Install</h2>
+    <p class="label">One line (downloads the prebuilt binary for your platform; falls back to source):</p>
+    <pre>curl -fsSL https://raw.githubusercontent.com/pixdeo/editxr/main/install.sh | bash</pre>
+    <p class="label">Homebrew:</p>
+    <pre>brew install pixdeo/tap/editxr</pre>
+    <p class="label">Or grab a package from the <a href="https://github.com/pixdeo/editxr/releases">releases</a>:</p>
+    <table>
+      <tr><th>Platform</th><th>Package</th></tr>
+      <tr>
+        <td>macOS · Apple Silicon + Intel</td>
+        <td><code>editxr-&lt;version&gt;-macos-universal.zip</code>
+          <span class="note">Signed &amp; notarised universal binary.</span></td>
+      </tr>
+      <tr>
+        <td>Linux · x86_64</td>
+        <td><code>editxr-&lt;version&gt;-linux-x86_64.tar.gz</code>
+          <span class="note">Static (musl) — runs on any distro, no Swift runtime needed.</span></td>
+      </tr>
+      <tr>
+        <td>Linux · aarch64</td>
+        <td><code>editxr-&lt;version&gt;-linux-aarch64.tar.gz</code>
+          <span class="note">Static (musl) — runs on any distro, no Swift runtime needed.</span></td>
+      </tr>
+      <tr>
+        <td>Windows · x64</td>
+        <td><code>editxr-&lt;version&gt;-windows-x64.zip</code>
+          <span class="note">Self-contained (exe + Swift runtime). Runs on Intel/AMD and on Windows on ARM via emulation. Best in Windows Terminal.</span></td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="/blog/">Blog</a> ·
+    <a href="https://github.com/pixdeo/editxr">GitHub</a> ·
+    <a href="https://github.com/pixdeo/editxr/blob/main/LICENSE">MIT</a> ·
+    <a href="/llms.txt">llms.txt</a> ·
+    © 2026 Pixdeo LTD
+  </div>
+</footer>
+
+<script>
+  function copyCmd(btn) {
+    var text = "curl -fsSL https://raw.githubusercontent.com/pixdeo/editxr/main/install.sh | bash";
+    navigator.clipboard.writeText(text).then(function () {
+      var old = btn.textContent; btn.textContent = "copied"; btn.style.color = "var(--accent)";
+      setTimeout(function () { btn.textContent = old; btn.style.color = ""; }, 1500);
+    });
+  }
+</script>
+</body>
+</html>
