@@ -44,6 +44,10 @@ class EditorState {
     var focusMode: FocusMode = .off
     var showStatusBar: Bool = true
     var showLineNumbers: Bool = false
+    /// Vim `relativenumber`: gutter numbers count from the cursor line (the
+    /// cursor line itself shows its absolute number when `number` is on, 0
+    /// otherwise). Session only.
+    var relativeLineNumbers: Bool = false
     var statusBarBig: Bool = true
     var wordWrap: Bool = true
     var scrollPastEnd: Bool = true
@@ -85,62 +89,58 @@ class EditorState {
     /// Syntax highlighter for non-Markdown files (nil → render as Markdown).
     let syntaxHighlighter: SyntaxHighlighter?
 
-    var llmProvider: LLMProvider = .lmStudio
-    private(set) var openRouterKey: String? = nil
-    private(set) var openRouterModel: String? = nil
-    private(set) var openAIAccessToken: String? = nil
-    private(set) var openAIRefreshToken: String? = nil
-    private(set) var openAIExpiresAt: Double? = nil
-    
     private var clipboard: String = ""
     private var savedTimer: DispatchWorkItem?
     
     private var undoStack: [DocumentSnapshot] = []
     private var redoStack: [DocumentSnapshot] = []
     private let maxUndoLevels = 100
+    /// Undo grouping (Vim insert sessions, compound commands): while open, only
+    /// the first edit records a snapshot, so one `u` reverts the whole group.
+    private var undoGroupDepth = 0
+    private var undoGroupHasSnapshot = false
     var scrollMargin = 4   // scroll-off: keep the cursor this many rows from the edge
     private let scrollMarginX = 8
     
     var onSavedIndicatorChanged: (() -> Void)?
+    /// Called after every successful save (e.g. to reload config.json when
+    /// that's the file being edited).
+    var onSaved: (() -> Void)?
     
     init(filePath: String) {
         self.filePath = filePath
         self.document = Document()
         self.syntaxHighlighter = SyntaxRegistry.forFile(filePath)
 
-        let config = Config.load()
-        self.wordWrap = config.wordWrap
-        self.scrollPastEnd = config.scrollPastEnd ?? true
-        self.fullTable = config.fullTable ?? true
-        self.alignTables = config.alignTables ?? true
-        self.contextHelp = config.contextHelp ?? true
-        self.blockMode = config.blockMode ?? true
-        // Prefer the new `sidebar` setting; fall back to the legacy showOutline flag.
-        if let raw = config.sidebar, let mode = SidebarMode(rawValue: raw) {
-            self.sidebarMode = mode
-        } else if config.showOutline == true {
-            self.sidebarMode = .outline
-        }
-        self.leftMargin = max(0, min(8, config.leftMargin ?? 1))
-        self.scrollMargin = max(0, min(20, config.scrollOff ?? 4))
-        self.tabWidth = max(1, min(16, config.tabWidth ?? 8))
-        // Clay is the default on first run; a saved choice still wins.
-        self.themeName = config.theme.flatMap(ThemeName.init(rawValue:)) ?? .clay
-        self.appearance = config.appearance.flatMap(Appearance.init(rawValue:)) ?? .auto
-        Theme.name = self.themeName
-        Theme.mode = self.appearance.mode
-        self.viewMode = config.renderMarkdown ? .normal : .raw
-        self.showLineNumbers = config.showLineNumbers ?? false
-        self.statusBarBig = config.statusBarBig ?? true
-        self.llmProvider = config.llmProvider
-        self.openRouterKey = config.openRouterKey
-        self.openRouterModel = config.openRouterModel
-        self.openAIAccessToken = config.openAIAccessToken
-        self.openAIRefreshToken = config.openAIRefreshToken
-        self.openAIExpiresAt = config.openAIExpiresAt
+        apply(ConfigStore.shared.current)
         
         loadFile()
         restoreCursorPosition()
+    }
+
+    /// Take every persisted setting from `config`. Used at startup and whenever
+    /// the configuration changes (settings panel, reload from disk). Session
+    /// state (focus mode, scroll, selection) is left alone.
+    func apply(_ config: Config) {
+        if wordWrap != config.wordWrap { scrollX = 0 }
+        wordWrap = config.wordWrap
+        scrollPastEnd = config.scrollPastEnd
+        fullTable = config.fullTable
+        alignTables = config.alignTables
+        contextHelp = config.contextHelp
+        blockMode = config.blockMode
+        sidebarMode = config.sidebar
+        leftMargin = max(0, min(8, config.leftMargin))
+        scrollMargin = max(0, min(20, config.scrollOff))
+        tabWidth = max(1, min(16, config.tabWidth))
+        // Clay is the default on first run; a saved choice still wins.
+        themeName = config.theme.flatMap(ThemeName.init(rawValue:)) ?? .clay
+        appearance = config.appearance.flatMap(Appearance.init(rawValue:)) ?? .auto
+        Theme.name = themeName
+        Theme.mode = appearance.mode
+        viewMode = config.renderMarkdown ? .normal : .raw
+        showLineNumbers = config.showLineNumbers
+        statusBarBig = config.statusBarBig
     }
 
     /// Restore the cursor (and scroll) saved from a previous session, clamped
@@ -214,7 +214,32 @@ class EditorState {
         return true
     }
 
+    /// Record an undo point for an edit the caller is about to make directly
+    /// on `document` (the Vim engine edits through this).
+    func recordUndoSnapshot() {
+        saveSnapshot()
+    }
+
+    /// Open an undo group; nested groups merge into the outermost one.
+    func beginUndoGroup() {
+        if undoGroupDepth == 0 { undoGroupHasSnapshot = false }
+        undoGroupDepth += 1
+    }
+
+    func endUndoGroup() {
+        undoGroupDepth = max(0, undoGroupDepth - 1)
+    }
+
+    var undoDepthForTest: Int { undoStack.count }
+
     private func saveSnapshot() {
+        if undoGroupDepth > 0 {
+            if undoGroupHasSnapshot {
+                redoStack.removeAll()
+                return
+            }
+            undoGroupHasSnapshot = true
+        }
         let snapshot = DocumentSnapshot(
             lines: document.lines,
             cursorLine: document.cursorLine,
@@ -262,7 +287,8 @@ class EditorState {
         isDirty = true
     }
     
-    func save() {
+    @discardableResult
+    func save() -> Bool {
         do {
             try document.content.write(toFile: filePath, atomically: true, encoding: .utf8)
             isDirty = false
@@ -278,12 +304,26 @@ class EditorState {
             }
             savedTimer = timer
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: timer)
-        } catch { }
+            onSaved?()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Write the document to another path (Vim `:w {file}`), leaving this
+    /// buffer's own file and dirty state untouched.
+    func write(lines: [String], toPath path: String) throws {
+        try lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    func markDirty() {
+        isDirty = true
     }
     
     func toggleViewMode() {
         viewMode = viewMode == .normal ? .raw : .normal
-        saveConfig()
+        persist { $0.renderMarkdown = self.viewMode == .normal }
     }
 
     /// Cycle off → line → word → off. Deliberately not persisted to config.
@@ -301,63 +341,63 @@ class EditorState {
     
     func toggleLineNumbers() {
         showLineNumbers.toggle()
-        saveConfig()
+        persist { $0.showLineNumbers = self.showLineNumbers }
     }
 
     func toggleStatusBarBig() {
         statusBarBig.toggle()
-        saveConfig()
+        persist { $0.statusBarBig = self.statusBarBig }
     }
     
     func toggleWordWrap() {
         wordWrap.toggle()
         scrollX = 0
-        saveConfig()
+        persist { $0.wordWrap = self.wordWrap }
     }
 
     func toggleScrollPastEnd() {
         scrollPastEnd.toggle()
-        saveConfig()
+        persist { $0.scrollPastEnd = self.scrollPastEnd }
     }
 
     func toggleFullTable() {
         fullTable.toggle()
-        saveConfig()
+        persist { $0.fullTable = self.fullTable }
     }
 
     func toggleAlignTables() {
         alignTables.toggle()
-        saveConfig()
+        persist { $0.alignTables = self.alignTables }
     }
 
     func toggleContextHelp() {
         contextHelp.toggle()
-        saveConfig()
+        persist { $0.contextHelp = self.contextHelp }
     }
 
     func toggleBlockMode() {
         blockMode.toggle()
-        saveConfig()
+        persist { $0.blockMode = self.blockMode }
     }
     /// Toggle a sidebar mode on, or off if it's already showing.
     func toggleSidebar(_ mode: SidebarMode) {
         sidebarMode = (sidebarMode == mode) ? .off : mode
-        saveConfig()
+        persist { $0.sidebar = self.sidebarMode }
     }
 
     func setLeftMargin(_ value: Int) {
         leftMargin = max(0, min(8, value))
-        saveConfig()
+        persist { $0.leftMargin = self.leftMargin }
     }
 
     func setScrollOff(_ value: Int) {
         scrollMargin = max(0, min(20, value))
-        saveConfig()
+        persist { $0.scrollOff = self.scrollMargin }
     }
 
     func setTabWidth(_ value: Int) {
         tabWidth = max(1, min(16, value))
-        saveConfig()
+        persist { $0.tabWidth = self.tabWidth }
     }
 
     /// Trackpad/wheel scroll: move the viewport directly and leave the cursor
@@ -405,68 +445,21 @@ class EditorState {
     func setTheme(_ name: ThemeName) {
         themeName = name
         Theme.name = name
-        saveConfig()
+        persist { $0.theme = name.rawValue }
     }
 
     func setAppearance(_ appearance: Appearance) {
         self.appearance = appearance
         Theme.mode = appearance.mode
-        saveConfig()
+        persist { $0.appearance = appearance.rawValue }
     }
     
-    private func saveConfig() {
-        var config = Config.load()
-        config.wordWrap = wordWrap
-        config.showLineNumbers = showLineNumbers
-        config.statusBarBig = statusBarBig
-        config.scrollPastEnd = scrollPastEnd
-        config.fullTable = fullTable
-        config.alignTables = alignTables
-        config.contextHelp = contextHelp
-        config.blockMode = blockMode
-        config.sidebar = sidebarMode.rawValue
-        config.leftMargin = leftMargin
-        config.scrollOff = scrollMargin
-        config.tabWidth = tabWidth
-        config.theme = themeName.rawValue
-        config.appearance = appearance.rawValue
-        config.renderMarkdown = viewMode == .normal
-        config.llmProvider = llmProvider
-        config.openRouterKey = openRouterKey
-        config.openRouterModel = openRouterModel
-        config.openAIAccessToken = openAIAccessToken
-        config.openAIRefreshToken = openAIRefreshToken
-        config.openAIExpiresAt = openAIExpiresAt
-        config.save()
+    /// Persist one changed setting (a patch, so other keys — including ones
+    /// edited by hand in config.json — are left as they are on disk).
+    private func persist(_ change: (inout Config) -> Void) {
+        ConfigStore.shared.update(change)
     }
 
-    var openAIIsSignedIn: Bool {
-        guard let token = openAIAccessToken else { return false }
-        return !token.isEmpty
-    }
-
-    func setLLMProvider(_ provider: LLMProvider) {
-        llmProvider = provider
-        saveConfig()
-    }
-
-    func setOpenRouterKey(_ key: String) {
-        openRouterKey = key
-        saveConfig()
-    }
-
-    func setOpenRouterModel(_ model: String) {
-        openRouterModel = model
-        saveConfig()
-    }
-
-    func setOpenAITokens(accessToken: String, refreshToken: String?, expiresAt: Double?) {
-        openAIAccessToken = accessToken
-        openAIRefreshToken = refreshToken
-        openAIExpiresAt = expiresAt
-        saveConfig()
-    }
-    
     func handleCharacter(_ char: Character) {
         saveSnapshot()
         if document.hasSelection {
@@ -1053,6 +1046,60 @@ class EditorState {
     
     func setViewportWidth(_ width: Int) {
         lastViewportWidth = width
+    }
+
+    /// Content width from the last frame (wrap width for display-line motions).
+    var viewportWidth: Int { lastViewportWidth }
+
+    /// The document line drawn on viewport row `row` (0 = top), clamped to the
+    /// document. Drives Vim's H / M / L.
+    func lineAtViewportRow(_ row: Int) -> Int {
+        documentPosition(visualRow: max(0, row), col: 0, viewportWidth: lastViewportWidth).line
+    }
+
+    enum ScrollAnchor { case top, center, bottom }
+
+    /// Scroll so the cursor's row sits at the top / middle / bottom of the
+    /// viewport (Vim zt / zz / zb). The scroll-off margin still applies on the
+    /// next frame, as it does in Vim.
+    func scrollCursor(to anchor: ScrollAnchor, viewportHeight: Int) {
+        let wrapped = wordWrap && pendingEdit == nil && syntaxHighlighter == nil
+        let row = wrapped ? visualLineForCursor(viewportWidth: lastViewportWidth) : document.cursorLine
+        let height = max(1, viewportHeight)
+        switch anchor {
+        case .top: scrollOffset = max(0, row)
+        case .center: scrollOffset = max(0, row - height / 2)
+        case .bottom: scrollOffset = max(0, row - height + 1)
+        }
+    }
+
+    /// The marker a new line after `line` continues with (`- `, `- [ ] `,
+    /// `> `), or nil when `line` isn't a non-empty list item or quote. Lets
+    /// Vim's o / O open list items the way Enter does.
+    func listContinuationPrefix(after line: String) -> String? {
+        if case .continueList(let prefix) = newlineAction(for: line) { return prefix }
+        return nil
+    }
+
+    /// The Tab key: cycle a task, promote a heading, or indent / insert a tab.
+    func handleTabKey() {
+        // Tasks cycle without a selection; selected tasks still indent.
+        if cursorLineIsTask && !document.hasSelection {
+            cycleTaskState()
+        } else if cursorHeadingLevel != nil {
+            adjustHeadingLevel(by: -1)
+        } else {
+            handleTab()
+        }
+    }
+
+    /// Shift+Tab: headings demote (# → ## → ###); every other line outdents.
+    func handleShiftTabKey() {
+        if cursorHeadingLevel != nil {
+            adjustHeadingLevel(by: 1)
+        } else {
+            handleOutdent()
+        }
     }
 
     /// Document lines the renderer draws as exactly one row regardless of their

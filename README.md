@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="editxr.png" alt="editxr" width="420">
+  <img src="editxr.png" alt="kme" width="420">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@ This is a **test** with *markdown*.
 
 ## Demo
 
-![editxr](demo/demo.png)
+![kme](demo/demo.png)
 
 **Renders as you type.** Markdown is styled in place; the line you're on stays raw.
 
@@ -99,7 +99,7 @@ This is a **test** with *markdown*.
 
 ## Philosophy
 
-In editxr you see the rendered result directly, without a separate preview pane.
+In kme you see the rendered result directly, without a separate preview pane.
 The line under your cursor stays raw text you can edit, and everything else is
 rendered, so you're always editing the real file. For a full render, press
 `Ctrl+E` to open the document as HTML in your browser.
@@ -146,7 +146,7 @@ auto-detection and OpenAI OAuth sign-in fall back gracefully there for now.
 
 ## Build & run
 
-editxr is a Swift Package. On most machines:
+kme is a Swift Package. On most machines:
 
 ```bash
 swift build -c release
@@ -170,7 +170,7 @@ and `[[wikilink]]` navigation to have somewhere to go:
 swift run editxr --vault example-vault "example-vault/Home.md"
 ```
 
-Once a vault is configured (via **Vault settings** in the palette, or
+Once a vault is configured (via **Settings → Vault** in the palette, or
 `--vault <dir>`), `editxr --vault` with no path opens that vault directly —
 the file-explorer sidebar on its primary file. The same action is available
 inside the editor as **Open vault** in the command palette.
@@ -197,8 +197,8 @@ auto-detection also fall back for now.
 | `Shift+Tab` | Outdent (on a heading: demote) |
 | `⌥S` | Focus the sidebar (outline / file tree) |
 | `Ctrl+L` | Toggle line numbers |
-| `Ctrl+P` | Command palette / settings |
-| `Ctrl+Space` | AI assist (edit the section) |
+| `Ctrl+P` | Command palette (→ **Settings** for every option) |
+| `Ctrl+Space` | AI assist (edit the section) — only when AI is enabled |
 | `Ctrl+E` | Export to HTML (and open it) |
 | `Ctrl+F` | Find (incremental) |
 | `Ctrl+G` | Find next match |
@@ -220,12 +220,40 @@ previous prompts; `Esc` cancels. While reviewing the diff: `y` / `Tab` accept,
 the next match and wraps; `↑`/`←` steps back. `Enter` keeps the matches so
 `Ctrl+G` keeps working after the bar closes; `Esc` cancels.
 
-## LLM configuration
+## Vim mode
 
-Open the command palette (`Ctrl+P`) → **LLM settings** to pick a provider:
+An optional modal editing layer on top of the WYSIWYG editor: Normal, Insert,
+Replace, Visual and Visual Line modes, operators with motions and text objects
+(`dw`, `ciw`, `da(`, `yap`…), counts, registers, `.` repeat, macros, marks,
+`/` search and an Ex command line (`:w`, `:q`, `:%s/a/b/g`, `:g/x/d`,
+`:sort`, `:normal`, `:set`…). Turn it on in **Settings → Editor → Vim Mode**
+(or `"vimMode": true` in config.json). The current mode shows in the status
+bar; `:config` opens the settings. See [VIM_MODE.md](VIM_MODE.md) for the full
+reference and what isn't supported.
 
-- **LM Studio.** Talks to an OpenAI-compatible endpoint, by default
-  `http://localhost:1234`.
+## Settings & configuration
+
+Every setting lives in one keyboard-driven menu: **Settings** in the command
+palette (`Ctrl+P`), or `:config` in Vim mode. Arrows or `j`/`k` move, `Enter`
+selects or edits, `/` searches, `Esc` goes back. Changes apply immediately and
+are saved to `~/.config/editxr/config.json` (override the path with
+`$EDITXR_CONFIG`).
+
+The JSON file is the source of truth and is meant to be hand-edited: **Settings
+→ Configuration → Open Config File** opens it in a tab, and saving it applies
+the changes. Edits made while the editor runs are picked up automatically.
+Missing keys take their defaults, invalid values are reported (and ignored)
+instead of resetting the file, and unknown keys are preserved. See
+[CONFIGURATION.md](CONFIGURATION.md) for every key.
+
+### AI
+
+AI features are optional and **off by default** for new installs (configs from
+earlier versions keep AI on). Enable them in **Settings → AI**, where you also
+pick the provider:
+
+- **LM Studio.** Any OpenAI-compatible endpoint, by default
+  `http://localhost:1234` (configurable, with the model name).
 - **OpenAI.** Sign in via OAuth (set `OPENAI_OAUTH_CLIENT_ID` in your
   environment first).
 - **OpenRouter.** Set your API key and a model
@@ -233,13 +261,15 @@ Open the command palette (`Ctrl+P`) → **LLM settings** to pick a provider:
 - **Mock (offline).** A deterministic local transform for trying the edit/review
   UI with no network.
 
-Settings (theme, appearance, provider, keys) persist to
-`~/.config/editxr/config.json`. Per-file cursor positions are stored in
-`~/.config/editxr/positions.json`.
+With AI off, no AI service is started and no request is made; the AI actions
+and `Ctrl+Space` are hidden, and your provider settings and keys are kept for
+when you turn it back on.
+
+Per-file cursor positions are stored in `~/.config/editxr/positions.json`.
 
 ## Roadmap
 
-- [ ] **Second-brain / multi-file editing.** Grow editxr from a single-document
+- [ ] **Second-brain / multi-file editing.** Grow kme from a single-document
   editor toward an Obsidian-like workspace, in order of difficulty: (1) tabs for
   multiple open files ✅; (2) recursive directory scan with a fuzzy quick-switcher
   (`Ctrl+O`) ✅; (3) navigable `[text](path)` and `[[wikilinks]]` that open in a

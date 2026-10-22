@@ -10,6 +10,10 @@ struct Document {
     var cursorLine: Int
     var cursorColumn: Int
     var selectionAnchor: CursorPosition?
+    /// An explicit selection (Vim Visual mode), drawn and acted on instead of
+    /// the anchor-to-cursor span. Visual selections are inclusive of the
+    /// character under the cursor, which an anchor/caret pair can't express.
+    var selectionOverride: (start: CursorPosition, end: CursorPosition)?
     
     init(content: String = "") {
         // Normalize on the way in: CRLF/CR become LF and stray control
@@ -23,7 +27,7 @@ struct Document {
         ensureTrailingEmptyLine()
     }
     
-    private mutating func ensureTrailingEmptyLine() {
+    mutating func ensureTrailingEmptyLine() {
         if lines.isEmpty || !lines.last!.isEmpty {
             lines.append("")
         }
@@ -34,11 +38,13 @@ struct Document {
     }
     
     var hasSelection: Bool {
+        if selectionOverride != nil { return true }
         guard let anchor = selectionAnchor else { return false }
         return anchor != cursorPosition
     }
     
     var selectionRange: (start: CursorPosition, end: CursorPosition)? {
+        if let override = selectionOverride { return override }
         guard let anchor = selectionAnchor, hasSelection else { return nil }
         let cursor = cursorPosition
         if anchor.line < cursor.line || (anchor.line == cursor.line && anchor.column < cursor.column) {
@@ -82,6 +88,7 @@ struct Document {
     
     mutating func clearSelection() {
         selectionAnchor = nil
+        selectionOverride = nil
     }
     
     mutating func replaceRange(_ range: (start: CursorPosition, end: CursorPosition), with text: String) {

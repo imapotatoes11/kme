@@ -17,6 +17,13 @@ struct PaletteCommand {
     /// Keep the panel open after running (e.g. live theme preview) instead of
     /// auto-closing like a terminal command.
     var keepsOpen: Bool = false
+    /// One-line explanation shown at the foot of the panel while this row is
+    /// selected (settings use it to say what a value does).
+    var detail: String? = nil
+    /// Rows reachable from this one that the palette's global search should
+    /// find, for an entry whose action opens them some other way (e.g. the
+    /// Settings entry, which switches the panel to the configuration UI).
+    var searchChildren: (() -> [PaletteCommand])? = nil
     /// Non-selectable section label that breaks the list into groups. Skipped by
     /// arrow navigation and hidden while a search query is active.
     var isHeader: Bool = false
@@ -54,6 +61,9 @@ final class CommandPanel {
         let prompt: String
         var value: String
         let isSecret: Bool
+        /// Returns why `value` can't be accepted (shown under the field), or nil.
+        var validate: ((String) -> String?)? = nil
+        var error: String? = nil
         let onSubmit: (String) -> Void
     }
 
@@ -86,6 +96,11 @@ final class CommandPanel {
     /// Levels that spread across the screen and can show a detail pane. Live
     /// search is the only one today.
     private var isWideLevel: Bool { liveQuery != nil }
+    /// Settings-style navigation: j/k move, l/h enter/leave, `/` starts a search
+    /// (any other letter also starts one). Off for the type-to-search palette.
+    private(set) var keyNavigation = false
+    /// With key navigation on, whether typed letters currently edit the query.
+    private var searchFocused = false
     // Nav stack of parent menus, for submenu push/pop.
     private var stack: [(title: String, generate: () -> [PaletteCommand], commands: [PaletteCommand], query: String, selectedIndex: Int, live: ((String) -> [PaletteCommand])?)] = []
 
@@ -105,13 +120,45 @@ final class CommandPanel {
 
     /// Set the root level from a generator so the panel can rebuild it (for live
     /// marker refresh and to flatten nested submenus during a global search).
-    func setRoot(title: String = "Commands", generate: @escaping () -> [PaletteCommand]) {
+    func setRoot(title: String = "Commands", keyNavigation: Bool = false,
+                 generate: @escaping () -> [PaletteCommand]) {
         self.generate = generate
         self.commands = generate()
         self.title = title
         self.stack = []
         self.liveQuery = nil
         self.liveCache = nil
+        self.keyNavigation = keyNavigation
+        self.searchFocused = false
+    }
+
+    /// Re-generate the current level (e.g. after the configuration changed
+    /// underneath it) so labels and values stay current.
+    func refresh() {
+        guard isVisible, liveQuery == nil else { return }
+        commands = generate()
+        let count = filteredCommands.count
+        if selectedIndex >= count { selectedIndex = max(0, count - 1) }
+        onStateChanged?()
+    }
+
+    var titleForTest: String { title }
+    var selectedTitleForTest: String? {
+        let cmds = filteredCommands
+        guard selectedIndex >= 0, selectedIndex < cmds.count else { return nil }
+        return cmds[selectedIndex].title
+    }
+    var rowTitlesForTest: [String] { filteredCommands.filter(\.isSelectable).map(\.title) }
+    func rowShortcutForTest(_ title: String) -> String? {
+        filteredCommands.first { $0.title == title }?.shortcut
+    }
+    var isInputForTest: Bool {
+        if case .input = state { return true }
+        return false
+    }
+    var inputErrorForTest: String? {
+        if case .input(let field) = state { return field.error }
+        return nil
     }
 
     /// Set the root to a live-search level: every keystroke re-runs `query` and
@@ -125,6 +172,8 @@ final class CommandPanel {
         self.liveQuery = provider
         self.liveCache = nil
         self.query = ""
+        self.keyNavigation = false
+        self.searchFocused = false
         self.state = .browsing
         resetSelection()
         onStateChanged?()
@@ -132,6 +181,7 @@ final class CommandPanel {
 
     func show() {
         query = ""
+        searchFocused = false
         stack = []
         state = .browsing
         resetSelection()
@@ -155,6 +205,7 @@ final class CommandPanel {
         self.generate = generate
         self.commands = generate()
         query = ""
+        searchFocused = false
         liveQuery = nil          // a submenu is a normal fuzzy-filtered level
         liveCache = nil
         state = .browsing
@@ -171,13 +222,22 @@ final class CommandPanel {
         selectedIndex = parent.selectedIndex
         liveQuery = parent.live
         liveCache = nil
+        searchFocused = false
         state = .browsing
+        // Values shown by the parent may have changed in the submenu.
+        if liveQuery == nil {
+            commands = generate()
+            if !query.isEmpty { resetSelection() }
+        }
         onStateChanged?()
     }
 
     /// Switch the current level into a single-field text input.
-    func beginInput(prompt: String, value: String, isSecret: Bool, onSubmit: @escaping (String) -> Void) {
-        state = .input(InputField(prompt: prompt, value: value, isSecret: isSecret, onSubmit: onSubmit))
+    func beginInput(prompt: String, value: String, isSecret: Bool,
+                    validate: ((String) -> String?)? = nil,
+                    onSubmit: @escaping (String) -> Void) {
+        state = .input(InputField(prompt: prompt, value: value, isSecret: isSecret,
+                                  validate: validate, onSubmit: onSubmit))
         onStateChanged?()
     }
 
@@ -236,7 +296,7 @@ final class CommandPanel {
         var out: [PaletteCommand] = []
         for c in cmds where c.isSelectable {
             out.append(c)
-            if let sub = c.submenu {
+            if let sub = c.submenu ?? c.searchChildren {
                 out.append(contentsOf: flattenForSearch(sub()))
             }
         }
@@ -302,9 +362,14 @@ final class CommandPanel {
     /// Leave the input field back to its menu, clearing the stale search query
     /// so subsequent filtering starts fresh.
     private func returnToMenu() {
+        let hadQuery = !query.isEmpty
         query = ""
-        selectedIndex = 0
+        searchFocused = false
+        if hadQuery { selectedIndex = 0 }
         state = .browsing
+        // The submitted value is usually shown on the row: regenerate.
+        if liveQuery == nil { commands = generate() }
+        if hadQuery || selectedIndex >= filteredCommands.count { resetSelection() }
         onStateChanged?()
     }
 
@@ -314,17 +379,31 @@ final class CommandPanel {
         case Key.escape:
             returnToMenu()              // cancel: back to the same menu level
         case Key.enter:
+            if let problem = field.validate?(field.value) {
+                field.error = problem
+                state = .input(field)
+                onStateChanged?()
+                return
+            }
             field.onSubmit(field.value)
-            returnToMenu()              // return to the (unchanged) menu level
+            // The submit handler may have moved the panel on (e.g. an error).
+            if case .input = state { returnToMenu() }
         case Key.backspace:
             if !field.value.isEmpty {
                 field.value.removeLast()
+                field.error = nil
                 state = .input(field)
                 onStateChanged?()
             }
+        case Key.ctrlU:
+            field.value = ""
+            field.error = nil
+            state = .input(field)
+            onStateChanged?()
         default:
             if isPrintable(char) {
                 field.value.append(char)
+                field.error = nil
                 state = .input(field)
                 onStateChanged?()
             }
@@ -332,15 +411,46 @@ final class CommandPanel {
     }
 
     private func handleBrowsingKey(_ char: Character) {
+        if keyNavigation && !searchFocused {
+            switch char {
+            case "j": moveSelection(1); return
+            case "k": moveSelection(-1); return
+            case "l", " ": activate(); return
+            case "h": goBack(); return
+            case "g": selectedIndex = selectableIndex(from: 0, step: 1) ?? 0; onStateChanged?(); return
+            case "G":
+                selectedIndex = selectableIndex(from: filteredCommands.count - 1, step: -1) ?? 0
+                onStateChanged?()
+                return
+            case "/":
+                searchFocused = true
+                onStateChanged?()
+                return
+            default:
+                if isPrintable(char) && char != " " { searchFocused = true }
+            }
+        }
         switch char {
         case Key.escape:
+            // A search in a key-navigated level is cleared before leaving it.
+            if keyNavigation && (searchFocused || !query.isEmpty) {
+                searchFocused = false
+                query = ""
+                resetSelection()
+                onStateChanged?()
+                return
+            }
             pop()                       // back one level, or close at the root
         case Key.enter:
+            searchFocused = false
             activate()
         case Key.backspace:
             if !query.isEmpty {
                 query.removeLast()
                 resetSelection()
+                onStateChanged?()
+            } else if keyNavigation && searchFocused {
+                searchFocused = false
                 onStateChanged?()
             }
         default:
@@ -472,7 +582,7 @@ final class CommandPanel {
         let nested = !stack.isEmpty
 
         let header = 4   // top pad + title + search + blank
-        let footer = 3   // blank + hint + bottom pad
+        let footer = 3 + (commands.contains { $0.detail != nil } && !(wide && contentWidth >= 72) ? 2 : 0)
 
         // Split geometry: results on the left, the selected note on the right.
         // Below the threshold the detail pane would squeeze both columns, so the
@@ -498,12 +608,25 @@ final class CommandPanel {
         }
         let end = min(cmds.count, start + maxRows)
 
-        let hint = nested ? "↑↓ move   ↵ select   esc back" : "↑↓ move   ↵ run   esc close"
+        let hint: String
+        if keyNavigation {
+            hint = searchFocused ? "type to filter   ↵ select   esc clear"
+                : (nested ? "j/k move   ↵ select   / search   esc back"
+                          : "j/k move   ↵ select   / search   esc close")
+        } else {
+            hint = nested ? "↑↓ move   ↵ select   esc back" : "↑↓ move   ↵ run   esc close"
+        }
+        // A level whose rows carry descriptions reserves a line for the
+        // selected one, so the box doesn't jump as the selection moves.
+        let showsDetail = !split && cmds.contains { $0.detail != nil }
 
         var lines: [String] = []
         lines.append(blankRow(boxWidth: boxWidth))                                              // top pad
         lines.append(textRow(title, color: Theme.accent, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
-        lines.append(textRow("Search: \(query)", color: Theme.statusBarText, cursor: true, contentWidth: contentWidth, boxWidth: boxWidth))
+        let searchCursor = !keyNavigation || searchFocused
+        let searchLabel = keyNavigation && !searchFocused && query.isEmpty ? "/ to search" : "Search: \(query)"
+        lines.append(textRow(searchLabel, color: keyNavigation && !searchFocused ? Theme.textMuted : Theme.statusBarText,
+                             cursor: searchCursor, contentWidth: contentWidth, boxWidth: boxWidth))
         lines.append(blankRow(boxWidth: boxWidth))
 
         if !split {
@@ -528,6 +651,11 @@ final class CommandPanel {
             }
         }
 
+        if showsDetail {
+            let detail = (selectedIndex >= 0 && selectedIndex < cmds.count) ? cmds[selectedIndex].detail ?? "" : ""
+            lines.append(blankRow(boxWidth: boxWidth))
+            lines.append(textRow(detail, color: Theme.textSecondary, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
+        }
         lines.append(blankRow(boxWidth: boxWidth))
         lines.append(textRow(hint, color: Theme.textMuted, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
         lines.append(blankRow(boxWidth: boxWidth))                                              // bottom pad
@@ -564,8 +692,11 @@ final class CommandPanel {
         lines.append(textRow(field.prompt, color: Theme.accent, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
         lines.append(blankRow(boxWidth: boxWidth))
         lines.append(textRow(shown, color: Theme.statusBarText, cursor: true, contentWidth: contentWidth, boxWidth: boxWidth))
+        if let error = field.error {
+            lines.append(textRow(error, color: Theme.diffDel, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
+        }
         lines.append(blankRow(boxWidth: boxWidth))
-        lines.append(textRow("↵ save   esc cancel", color: Theme.textMuted, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
+        lines.append(textRow("↵ save   esc cancel   ^U clear", color: Theme.textMuted, cursor: false, contentWidth: contentWidth, boxWidth: boxWidth))
         lines.append(blankRow(boxWidth: boxWidth))
         return lines
     }

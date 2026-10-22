@@ -1,6 +1,6 @@
 import Foundation
 
-enum LLMProvider: String, Codable {
+enum LLMProvider: String, Codable, CaseIterable {
     case lmStudio
     case openaiOAuth
     case openRouter

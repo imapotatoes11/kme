@@ -100,10 +100,21 @@ class EditorApp {
     private var lastMouseClickTime: Date?
     private var lastMouseClickCell: (row: Int, col: Int)?
     private var mouseClickCount = 0
-    private let llmService = LLMService()
+    /// AI services exist only while AI is enabled in the configuration: with
+    /// it off nothing is constructed, so no AI request can be made.
+    private var llmService: LLMService?
     private var llmModal: LLMModal?
-    private let openAIOAuth = OpenAIOAuth()
+    private var openAIOAuth: OpenAIOAuth?
     private var commandPanel: CommandPanel?
+    /// The unified settings menu (`:config` / palette → Settings).
+    private var configPanel: ConfigPanel!
+    /// Modal editing, present only while `vimMode` is on. Shared by every tab
+    /// (registers and marks carry across); it re-attaches on a tab switch.
+    private var vim: VimEngine?
+    private weak var vimAttachedState: EditorState?
+    private var appliedVimConfig: VimConfig?
+    /// How the app exits; replaced by tests so `:q` can be exercised.
+    var terminate: () -> Void = { exit(0) }
     /// Whole-line range the next LLM result should review against, captured
     /// when the modal opens (selection or current block).
     private var reviewRange: (startLine: Int, endLine: Int)?
@@ -153,20 +164,143 @@ class EditorApp {
             }
         }
         
-        llmModal = LLMModal(llmService: llmService)
-        llmModal?.onStateChanged = { [weak self] in
-            self?.updateSpinnerTimer()
-            self?.render()
-        }
-        llmModal?.onResultReady = { [weak self] text in
-            self?.enterReview(with: text)
-        }
-
-        syncLLMService()
-
         commandPanel = CommandPanel()
         commandPanel?.onStateChanged = { [weak self] in
             self?.render()
+        }
+        configPanel = ConfigPanel(host: self)
+        for st in states {
+            st.onSaved = { [weak self, weak st] in self?.documentSaved(st) }
+        }
+        updateAIServices()
+        updateVimEngine()
+    }
+
+    var configStore: ConfigStore { ConfigStore.shared }
+
+    private var aiEnabled: Bool { configStore.current.ai.enabled }
+
+    /// Create or tear down the AI services to match `ai.enabled`, and point a
+    /// live service at the configured provider.
+    private func updateAIServices() {
+        guard aiEnabled else {
+            llmModal?.hide()
+            llmService?.cancel()
+            openAIOAuth?.cancel()
+            llmModal = nil
+            llmService = nil
+            openAIOAuth = nil
+            updateSpinnerTimer()
+            return
+        }
+        if llmService == nil {
+            let service = LLMService()
+            let modal = LLMModal(llmService: service)
+            modal.onStateChanged = { [weak self] in
+                self?.updateSpinnerTimer()
+                self?.render()
+            }
+            modal.onResultReady = { [weak self] text in
+                self?.enterReview(with: text)
+            }
+            llmService = service
+            llmModal = modal
+        }
+        llmService?.configure(configStore.current.ai)
+    }
+
+    /// Start or stop Vim mode to match `vimMode`, and carry the configured
+    /// defaults for Vim's own options into the engine when they change.
+    private func updateVimEngine() {
+        let config = configStore.current
+        guard config.vimMode else {
+            if let engine = vim {
+                engine.reset()
+                state.document.selectionOverride = nil
+            }
+            vim = nil
+            appliedVimConfig = nil
+            return
+        }
+        if vim == nil {
+            vim = VimEngine(host: self)
+            vimAttachedState = state
+            vim?.reset()
+        }
+        if appliedVimConfig != config.vim, let engine = vim {
+            engine.ignoreCase = config.vim.ignoreCase
+            engine.smartCase = config.vim.smartCase
+            engine.systemClipboard = config.vim.systemClipboard
+            if appliedVimConfig?.startupCommands != config.vim.startupCommands {
+                engine.mappings.removeAll()
+                for command in config.vim.startupCommands { engine.runEx(command) }
+                engine.reset()
+            }
+            appliedVimConfig = config.vim
+        }
+    }
+
+    /// Vim's `timeoutlen`: keys held for a possible mapping run on their own
+    /// after a second without more input.
+    private var mappingTimeout: DispatchWorkItem?
+
+    private func scheduleMappingTimeout(_ engine: VimEngine) {
+        mappingTimeout?.cancel()
+        mappingTimeout = nil
+        guard engine.hasPendingMapping else { return }
+        let work = DispatchWorkItem { [weak self, weak engine] in
+            guard let self, let engine else { return }
+            self.mappingTimeout = nil
+            engine.flushPendingMapping()
+            self.render()
+        }
+        mappingTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    /// Route one input chunk through the Vim engine. App-wide shortcuts (save,
+    /// palette, quit, vault, AI, help) still work between Vim commands.
+    private func handleVimInput(_ string: String, engine: VimEngine) {
+        if vimAttachedState !== state {
+            vimAttachedState = state
+            engine.reset()
+        }
+        if let pasteContent = extractBracketedPaste(string) {
+            if engine.mode == .commandLine {
+                engine.handle(pasteContent.filter { !$0.isNewline }.map { VimKey.char($0) })
+            } else {
+                handlePaste(pasteContent)
+            }
+            render()
+            return
+        }
+        handleVimKeys(VimKey.parse(terminal: string), engine: engine)
+        scheduleMappingTimeout(engine)
+        render()
+    }
+
+    private func handleVimKeys(_ keys: [VimKey], engine: VimEngine) {
+        for key in keys {
+            if case .char(let c) = key, engine.allowsAppShortcut(c) {
+                handleAppShortcut(c)
+                continue
+            }
+            engine.handle(key)
+        }
+    }
+
+    /// The app-level shortcuts Vim mode leaves in place.
+    private func handleAppShortcut(_ char: Character) {
+        switch char {
+        case Key.ctrlS: state.save()
+        case Key.ctrlP: toggleCommandPanel()
+        case Key.ctrlQ: quit()
+        case Key.ctrlK: openVaultSearch()
+        case Key.ctrlSpace: showLLMModal()
+        case Key.ctrlSlash: openShortcutsHelp()
+        case Key.ctrlRightBracket: followLinkUnderCursor()
+        case Key.ctrlT: state.cycleTaskState()
+        default: break
         }
     }
 
@@ -229,9 +363,14 @@ class EditorApp {
             PaletteCommand(title: "Clear all", shortcut: "") { [weak self] in self?.state.clearAll() },
         ]
 
-        // Nested submenus need no header — the entry title speaks for itself.
+        // Every setting lives in the one configuration UI (also `:config`).
+        // Its rows still show up in the palette's global search.
         cmds.append(.spacer)
-        cmds.append(submenuCommand("Editor settings") { [weak self] in self?.editorMenuCommands() ?? [] })
+        cmds.append(PaletteCommand(title: "Settings", shortcut: "→", keepsOpen: true,
+                                   detail: "All settings (also :config in Vim mode)",
+                                   searchChildren: { [weak self] in self?.configPanel.rootCommands() ?? [] }) { [weak self] in
+            self?.openConfigPanel()
+        })
 
         cmds.append(.spacer)
         cmds.append(.header("Go to"))
@@ -248,19 +387,15 @@ class EditorApp {
             },
         ]
 
-        cmds.append(.spacer)
-        cmds.append(.header("AI"))
-        cmds += [
-            PaletteCommand(title: "AI assist", shortcut: "^Space") { [weak self] in self?.showLLMModal() },
-            submenuCommand("LLM settings") { [weak self] in self?.llmSettingsCommands() ?? [] },
-        ]
+        if aiEnabled {
+            cmds.append(.spacer)
+            cmds.append(.header("AI"))
+            cmds.append(PaletteCommand(title: "AI assist", shortcut: "^Space") { [weak self] in self?.showLLMModal() })
+        }
 
         cmds.append(.spacer)
         cmds.append(.header("Vault"))
         cmds += vaultMenuCommands()
-
-        cmds.append(.spacer)
-        cmds.append(submenuCommand("Theme & appearance") { [weak self] in self?.themeMenuCommands() ?? [] })
 
         return cmds
     }
@@ -283,13 +418,12 @@ class EditorApp {
         cmds.append(PaletteCommand(title: "Use this folder as vault", shortcut: "") { [weak self] in
             self?.useCurrentFolderAsVault()
         })
-        cmds.append(submenuCommand("Vault settings") { [weak self] in self?.vaultSettingsCommands() ?? [] })
         return cmds
     }
 
     /// Everything vault-scoped: which folder, the recents, how search behaves,
     /// and what the index still needs before it can run.
-    private func vaultSettingsCommands() -> [PaletteCommand] {
+    func vaultSettingsCommands() -> [PaletteCommand] {
         let root = vaultRoot()
         let status = EmbedderFactory.status(for: vault.backend, semanticSearch: vault.semanticSearch)
         var cmds: [PaletteCommand] = []
@@ -714,7 +848,7 @@ class EditorApp {
             row("Cycle task / promote heading / indent", "Tab"),
             row("Outdent (heading: demote)", "⇧Tab"),
             row("Focus sidebar", "⌥S"),
-            row("AI assist", "^Space"),
+        ] + (aiEnabled ? [row("AI assist", "^Space")] : []) + [
             .spacer, .header("Find"),
             row("Find", "^F"),
             row("Find next", "^G"),
@@ -727,130 +861,62 @@ class EditorApp {
             row("Move cursor", "← ↑ → ↓"),
             row("Top / bottom", "Home / End"),
             row("Page up / down", "PgUp / PgDn"),
+        ] + (vim == nil ? [] : vimHelpRows(row))
+    }
+
+    /// The Vim reference shown in the shortcuts panel while Vim mode is on.
+    private func vimHelpRows(_ row: (String, String) -> PaletteCommand) -> [PaletteCommand] {
+        [
+            .spacer, .header("Vim — modes"),
+            row("Insert before / after cursor", "i / a"),
+            row("Insert at line start / end", "I / A"),
+            row("Open line below / above", "o / O"),
+            row("Replace mode / one char", "R / r{c}"),
+            row("Visual / visual line", "v / V"),
+            row("Back to Normal mode", "esc"),
+            row("Command line / settings", ": / :config"),
+            .spacer, .header("Vim — motions"),
+            row("Left / down / up / right", "h j k l"),
+            row("Word / WORD forward, back, end", "w W b B e E ge"),
+            row("Line start / first char / end", "0 ^ $"),
+            row("Top / bottom / line N", "gg G NG :N"),
+            row("Find char in line (repeat ; ,)", "f F t T"),
+            row("Paragraph / sentence", "{ } ( )"),
+            row("Matching bracket", "%"),
+            row("Screen top / middle / bottom", "H M L"),
+            row("Search / next / previous", "/ ? n N * #"),
+            row("Half page / page / scroll", "^D ^U ^F ^B ^E ^Y"),
+            row("Marks: set / jump", "m{a} '{a} `{a}"),
+            row("Jump back / forward", "^O / Tab"),
+            .spacer, .header("Vim — editing"),
+            row("Delete / change / yank + motion", "d c y"),
+            row("Line: delete / change / yank", "dd cc yy"),
+            row("Text objects", "iw aW ip is i( a[ i{ i\" a'"),
+            row("Delete char / to end of line", "x X D C s S"),
+            row("Put after / before", "p P"),
+            row("Join lines", "J gJ"),
+            row("Format / re-wrap", "gq gw gqap"),
+            row("Indent / outdent", "> < >> <<"),
+            row("Case toggle / lower / upper", "~ g~ gu gU"),
+            row("Increment / decrement number", "^A ^X"),
+            row("Undo / redo / repeat", "u ^R ."),
+            row("Registers", "\"a \"A \"0 \"+ \"_"),
+            row("Record / play macro", "q{a} … q / @{a} @@"),
+            .spacer, .header("Vim — Ex commands"),
+            row("Write / quit / both", ":w :q :wq :x ZZ"),
+            row("Force / all", ":q! :qa :wa"),
+            row("Substitute", ":%s/a/b/g"),
+            row("Global / inverse", ":g/pat/cmd :v/pat/cmd"),
+            row("Delete / yank / move / copy lines", ":d :y :m :t"),
+            row("Normal keys on lines", ":%norm A;"),
+            row("Sort lines", ":sort [n u i]"),
+            row("Options", ":set nu wrap ic scs ts=4"),
+            row("Key mappings", ":inoremap jk <Esc>"),
+            row("Edit file / tabs", ":e file :tabn :bn :ls"),
+            row("Registers / marks / messages", ":reg :marks :mes"),
         ]
     }
 
-    // MARK: - Editor settings menu
-
-    /// View / layout toggles and editing-pane settings, nested under "Editor".
-    private func editorMenuCommands() -> [PaletteCommand] {
-        return [
-            toggleCommand("Toggle raw view", "^R") { [weak self] in self?.state.toggleViewMode() },
-            toggleCommand("Toggle word wrap", "") { [weak self] in self?.state.toggleWordWrap() },
-            toggleCommand("Toggle line numbers", "^L") { [weak self] in self?.state.toggleLineNumbers() },
-            toggleCommand("Focus mode (^B)", state.focusMode.label) { [weak self] in self?.state.cycleFocusMode() },
-            toggleCommand("Toggle scroll past end", "") { [weak self] in self?.state.toggleScrollPastEnd() },
-            toggleCommand("Toggle big status bar", state.statusBarBig ? "big" : "slim") { [weak self] in self?.state.toggleStatusBarBig() },
-            toggleCommand("Toggle contextual hints", state.contextHelp ? "on" : "off") { [weak self] in self?.state.toggleContextHelp() },
-            toggleCommand("Toggle block mode", state.blockMode ? "on" : "off") { [weak self] in self?.state.toggleBlockMode() },
-            toggleCommand("Outline sidebar", state.sidebarMode == .outline ? "on" : "off") { [weak self] in self?.toggleSidebarMode(.outline) },
-            toggleCommand("File explorer sidebar", state.sidebarMode == .files ? "on" : "off") { [weak self] in self?.toggleSidebarMode(.files) },
-            toggleCommand("Toggle full table borders", "") { [weak self] in self?.state.toggleFullTable() },
-            toggleCommand("Align tables to widest", state.alignTables ? "on" : "off") { [weak self] in self?.state.toggleAlignTables() },
-            PaletteCommand(title: "Set left margin", shortcut: "\(state.leftMargin)") { [weak self] in
-                guard let self = self else { return }
-                self.commandPanel?.beginInput(prompt: "Left margin (columns, 0–8)", value: "\(self.state.leftMargin)", isSecret: false) { [weak self] value in
-                    if let n = Int(value.trimmingCharacters(in: .whitespaces)) { self?.state.setLeftMargin(n) }
-                }
-            },
-            PaletteCommand(title: "Set scroll-off", shortcut: "\(state.scrollMargin)") { [weak self] in
-                guard let self = self else { return }
-                self.commandPanel?.beginInput(prompt: "Scroll-off (rows from edge, 0–20)", value: "\(self.state.scrollMargin)", isSecret: false) { [weak self] value in
-                    if let n = Int(value.trimmingCharacters(in: .whitespaces)) { self?.state.setScrollOff(n) }
-                }
-            },
-            PaletteCommand(title: "Set tab width", shortcut: "\(state.tabWidth)") { [weak self] in
-                guard let self = self else { return }
-                self.commandPanel?.beginInput(prompt: "Tab width (columns, 1–16)", value: "\(self.state.tabWidth)", isSecret: false) { [weak self] value in
-                    if let n = Int(value.trimmingCharacters(in: .whitespaces)) { self?.state.setTabWidth(n) }
-                }
-            },
-        ]
-    }
-
-    // MARK: - Theme menu
-
-    /// Theme + appearance picker. Selecting keeps the panel open; the panel
-    /// re-generates the list so the change previews live and the "current"
-    /// marker follows.
-    private func themeMenuCommands() -> [PaletteCommand] {
-        var cmds: [PaletteCommand] = []
-
-        cmds.append(.header("Theme"))
-        for theme in ThemeName.allCases {
-            let active = state.themeName == theme
-            cmds.append(PaletteCommand(title: theme.displayName, shortcut: active ? "current" : "", keepsOpen: true) { [weak self] in
-                self?.state.setTheme(theme)
-            })
-        }
-
-        cmds.append(.spacer)
-        cmds.append(.header("Appearance"))
-        for appearance in Appearance.allCases {
-            let active = state.appearance == appearance
-            cmds.append(PaletteCommand(title: appearance.displayName, shortcut: active ? "current" : "", keepsOpen: true) { [weak self] in
-                self?.state.setAppearance(appearance)
-            })
-        }
-
-        return cmds
-    }
-
-    // MARK: - LLM settings menus
-
-    private func selectProvider(_ provider: LLMProvider) {
-        state.setLLMProvider(provider)
-        syncLLMService()
-        commandPanel?.hide()
-    }
-
-    private func llmSettingsCommands() -> [PaletteCommand] {
-        var cmds: [PaletteCommand] = []
-        func mark(_ p: LLMProvider) -> String { state.llmProvider == p ? "current" : "" }
-
-        cmds.append(PaletteCommand(title: "Provider: LM Studio", shortcut: mark(.lmStudio)) { [weak self] in
-            self?.selectProvider(.lmStudio)
-        })
-        if state.openAIIsSignedIn {
-            cmds.append(PaletteCommand(title: "Provider: OpenAI", shortcut: mark(.openaiOAuth)) { [weak self] in
-                self?.selectProvider(.openaiOAuth)
-            })
-        } else {
-            cmds.append(PaletteCommand(title: "Sign in to OpenAI", shortcut: "") { [weak self] in
-                self?.startOpenAIOAuth()
-            })
-        }
-        cmds.append(submenuCommand("OpenRouter") { [weak self] in self?.openRouterCommands() ?? [] })
-        cmds.append(PaletteCommand(title: "Provider: Mock (offline)", shortcut: mark(.mock)) { [weak self] in
-            self?.selectProvider(.mock)
-        })
-        return cmds
-    }
-
-    private func openRouterCommands() -> [PaletteCommand] {
-        let keyLabel = (state.openRouterKey?.isEmpty == false) ? "set" : "not set"
-        let modelLabel = (state.openRouterModel?.isEmpty == false) ? state.openRouterModel! : "default"
-        return [
-            PaletteCommand(title: "Set API key", shortcut: keyLabel) { [weak self] in
-                guard let self = self else { return }
-                self.commandPanel?.beginInput(prompt: "OpenRouter API key", value: self.state.openRouterKey ?? "", isSecret: true) { [weak self] key in
-                    self?.state.setOpenRouterKey(key)
-                    self?.syncLLMService()
-                }
-            },
-            PaletteCommand(title: "Set model", shortcut: modelLabel) { [weak self] in
-                guard let self = self else { return }
-                self.commandPanel?.beginInput(prompt: "OpenRouter model (e.g. openai/gpt-4o-mini)", value: self.state.openRouterModel ?? "", isSecret: false) { [weak self] model in
-                    self?.state.setOpenRouterModel(model)
-                    self?.syncLLMService()
-                }
-            },
-            PaletteCommand(title: "Use OpenRouter", shortcut: state.llmProvider == .openRouter ? "current" : "") { [weak self] in
-                self?.selectProvider(.openRouter)
-            },
-        ]
-    }
-    
     func start() {
         setInputMode()
         enterAlternateScreen()
@@ -932,6 +998,9 @@ class EditorApp {
     }
 
     private func checkExternalChanges() {
+        if configStore.hasChangedOnDisk {
+            reloadConfig(announce: true)
+        }
         for s in states {
             guard s.checkExternalChange() else { continue }
             if s.isDirty {
@@ -1166,7 +1235,7 @@ class EditorApp {
                     return
                 }
                 if char == Key.escape && panel.isOAuthInProgress {
-                    openAIOAuth.cancel()
+                    openAIOAuth?.cancel()
                 }
                 panel.handleKey(char)
             }
@@ -1203,6 +1272,11 @@ class EditorApp {
         if sidebarFocused && sidebarRendered {
             handleSidebarKey(string)
             render()
+            return
+        }
+
+        if let engine = vim {
+            handleVimInput(string, engine: engine)
             return
         }
 
@@ -1317,14 +1391,7 @@ class EditorApp {
             case Key.ctrlRightBracket:
                 followLinkUnderCursor()
             case Key.tab:
-                // Tasks cycle without a selection; selected tasks still indent.
-                if state.cursorLineIsTask && !state.document.hasSelection {
-                    state.cycleTaskState()
-                } else if state.cursorHeadingLevel != nil {
-                    state.adjustHeadingLevel(by: -1)
-                } else {
-                    state.handleTab()
-                }
+                state.handleTabKey()
                 needsRender = true
             case Key.ctrlSpace:
                 showLLMModal()
@@ -1390,13 +1457,6 @@ class EditorApp {
         modal.handleCharacter(char)
     }
     
-    /// Push the current provider + all credentials into the LLM service.
-    private func syncLLMService() {
-        llmService.openRouterKey = state.openRouterKey
-        llmService.openRouterModel = state.openRouterModel
-        llmService.setProvider(state.llmProvider, openAIAccessToken: state.openAIAccessToken)
-    }
-
     /// Start/stop a ~10fps re-render loop while the LLM spinner is on screen.
     private func updateSpinnerTimer() {
         let animating = llmModal?.isAnimating ?? false
@@ -1442,6 +1502,10 @@ class EditorApp {
     }
 
     private func showLLMModal() {
+        guard aiEnabled, let modal = llmModal else {
+            showToast("AI is off — enable it in Settings (^P → Settings → AI)")
+            return
+        }
         let doc = state.document
         let startLine: Int, endLine: Int
         if let selection = doc.selectionRange {
@@ -1457,7 +1521,7 @@ class EditorApp {
         reviewRange = (startLine, endLine)
         // Edits operate on whole lines (sections), so send the full lines as context.
         let context = doc.lines[startLine...endLine].joined(separator: "\n")
-        llmModal?.show(withContext: context)
+        modal.show(withContext: context)
     }
 
     private func enterReview(with text: String) {
@@ -1558,12 +1622,7 @@ class EditorApp {
         case .shiftPageDown:
             state.pageDown(viewportHeight: viewportHeight, selecting: true)
         case .shiftTab:
-            // Headings demote (# → ## → ###); every other line outdents.
-            if state.cursorHeadingLevel != nil {
-                state.adjustHeadingLevel(by: 1)
-            } else {
-                state.handleOutdent()
-            }
+            state.handleShiftTabKey()
         }
         render()
     }
@@ -1644,12 +1703,15 @@ class EditorApp {
     // Test hook: feed raw input through the real entry point (ESC reassembly
     // included), so tests exercise the same path as terminal reads.
     func handleInputForTest(_ s: String) { handleInput(Data(s.utf8)) }
+    /// Test hook: deliver one already-assembled input chunk, skipping the lone
+    /// ESC hold (so a bare "\u{1B}" acts as the Escape key immediately).
+    func processInputForTest(_ s: String) { processInput(s) }
     var activeTabForTest: Int { activeTab }
     var tabCountForTest: Int { states.count }
 
     private func gutterWidth() -> Int {
         // The gutter doubles as the configurable left margin.
-        if state.showLineNumbers {
+        if state.showLineNumbers || state.relativeLineNumbers {
             let maxLineNum = state.document.lines.count
             return state.leftMargin + String(maxLineNum).count + 1
         }
@@ -1657,8 +1719,10 @@ class EditorApp {
     }
 
     private func renderGutter(lineNumber: Int, width: Int) -> String {
-        if state.showLineNumbers {
-            let numStr = String(lineNumber)
+        if state.showLineNumbers || state.relativeLineNumbers {
+            let distance = abs(lineNumber - 1 - state.document.cursorLine)
+            let shown = state.relativeLineNumbers && (distance > 0 || !state.showLineNumbers) ? distance : lineNumber
+            let numStr = String(shown)
             let padding = String(repeating: " ", count: max(0, width - numStr.count - 1))
             return "\(Theme.gutter)\(padding)\(numStr) \(Theme.reset)"
         }
@@ -2047,7 +2111,7 @@ class EditorApp {
     private func toggleCommandPanel() {
         guard let panel = commandPanel else { return }
         if panel.isVisible {
-            openAIOAuth.cancel()
+            openAIOAuth?.cancel()
             panel.hide()
         } else {
             panel.setRoot { [weak self] in self?.buildCommands() ?? [] }
@@ -2057,8 +2121,10 @@ class EditorApp {
     }
 
     private func startOpenAIOAuth() {
+        guard aiEnabled else { return }
+        if openAIOAuth == nil { openAIOAuth = OpenAIOAuth() }
         commandPanel?.setOAuthStatus(url: "", message: "Starting...")
-        openAIOAuth.start(
+        openAIOAuth?.start(
             onUpdate: { [weak self] url, message in
                 self?.commandPanel?.setOAuthStatus(url: url, message: message)
             },
@@ -2066,9 +2132,12 @@ class EditorApp {
                 guard let self = self else { return }
                 switch result {
                 case .success(let tokens):
-                    self.state.setOpenAITokens(accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt: tokens.expiresAt)
-                    self.state.setLLMProvider(.openaiOAuth)
-                    self.syncLLMService()
+                    self.changeConfig { config in
+                        config.ai.openAIAccessToken = tokens.accessToken
+                        config.ai.openAIRefreshToken = tokens.refreshToken
+                        config.ai.openAIExpiresAt = tokens.expiresAt
+                        config.ai.provider = .openaiOAuth
+                    }
                     self.commandPanel?.hide()
                 case .failure(let err):
                     self.commandPanel?.setError(err.localizedDescription)
@@ -3686,6 +3755,26 @@ class EditorApp {
             leftVisible += visible
         }
 
+        // Vim: the mode first, then a half-typed command and macro recording.
+        // An open command line takes over the rest of the segment.
+        if let engine = vim {
+            if let line = engine.commandLineDisplay {
+                let cursor = "\(Theme.inverse) \(Theme.reset)\(Theme.statusBarBg)\(Theme.statusBarText)"
+                append("\(line)\(cursor)", visible: line.displayWidth + 1)
+            } else {
+                let label = engine.modeLabel
+                append("\(Theme.accent)\(Theme.bold)\(label)\(Theme.reset)\(Theme.statusBarBg)\(Theme.statusBarText)",
+                       visible: label.count)
+                if let reg = engine.recordingRegister {
+                    let rec = "recording @\(reg)"
+                    append("\(Theme.accent)\(rec)\(Theme.statusBarText)", visible: rec.count)
+                }
+                let pendingKeys = engine.pendingDisplay
+                if !pendingKeys.isEmpty {
+                    append("\(Theme.textMuted)\(pendingKeys)\(Theme.statusBarText)", visible: pendingKeys.displayWidth)
+                }
+            }
+        }
         if let toast = toastText {
             append("\(Theme.fadedStatusFg(toastOpacity))\(toast)\(Theme.statusBarText)", visible: toast.count)
         }
@@ -3746,15 +3835,23 @@ class EditorApp {
     private func renderHintBar(width: Int) -> String {
         // Left: the AI provider (and model, if set). Right: command/help shortcuts,
         // right-aligned with one column of padding from the edge.
-        var providerText = state.llmProvider.displayName
-        if state.llmProvider == .openRouter, let model = state.openRouterModel, !model.isEmpty {
+        let ai = configStore.current.ai
+        var providerText = ai.enabled ? ai.provider.displayName : ""
+        if ai.enabled, ai.provider == .openRouter, let model = ai.openRouterModel, !model.isEmpty {
             providerText += " · \(model)"
         }
         let left = "\(Theme.textMuted)\(providerText)\(Theme.reset)"
         let leftVisible = providerText.displayWidth
 
-        let rightPlain = "ctrl+p commands   ctrl+/ help"
-        let right = "\(Theme.accent)ctrl+p \(Theme.textMuted)commands   \(Theme.accent)ctrl+/ \(Theme.textMuted)help\(Theme.reset)"
+        let rightPlain: String
+        let right: String
+        if vim != nil {
+            rightPlain = ":config settings   ctrl+p commands   ctrl+/ help"
+            right = "\(Theme.accent):config \(Theme.textMuted)settings   \(Theme.accent)ctrl+p \(Theme.textMuted)commands   \(Theme.accent)ctrl+/ \(Theme.textMuted)help\(Theme.reset)"
+        } else {
+            rightPlain = "ctrl+p commands   ctrl+/ help"
+            right = "\(Theme.accent)ctrl+p \(Theme.textMuted)commands   \(Theme.accent)ctrl+/ \(Theme.textMuted)help\(Theme.reset)"
+        }
         let rightVisible = rightPlain.displayWidth
 
         let gap = max(1, width - leftVisible - rightVisible - 2)
@@ -3847,6 +3944,7 @@ class EditorApp {
             case 64: wheel -= 1                 // wheel up
             case 65: wheel += 1                 // wheel down
             case 0 where !e.release:            // left press
+                vim?.prepareForMouse()
                 let clicks = nextMouseClickCount(row: row, col: col)
                 state.mousePress(row: row, col: col, viewportWidth: viewportWidth, clickCount: clicks)
                 // A single click that lands on a link follows it (links render
@@ -3968,6 +4066,7 @@ class EditorApp {
             let st = EditorState(filePath: path)
             st.sidebarMode = state.sidebarMode   // sidebar mode is app-wide: new tabs inherit it
             st.onSavedIndicatorChanged = { [weak self] in self?.render() }
+            st.onSaved = { [weak self, weak st] in self?.documentSaved(st) }
             states.append(st)
             activeTab = states.count - 1
             showSplash = false
@@ -4377,11 +4476,248 @@ class EditorApp {
             showToast("Unsaved changes — Ctrl+D again to quit")
             return
         }
+        performExit()
+    }
+
+    private func performExit() {
         states.forEach { $0.persistCursorPosition() }
         showCursor()
         exitAlternateScreen()
         resetInputMode()
-        exit(0)
+        terminate()
+    }
+}
+
+// MARK: - Configuration
+
+extension EditorApp: ConfigPanelHost {
+    func changeConfig(_ change: @escaping (inout Config) -> Void) {
+        let saved = configStore.update(change)
+        applyConfig()
+        if !saved, let error = configStore.lastError {
+            showToast("Not saved (this session only): \(error.localizedDescription)")
+        }
+    }
+
+    /// Push the store's configuration into everything that caches it: every
+    /// open document, the vault, the AI services, and the Vim engine.
+    fileprivate func applyConfig() {
+        let config = configStore.current
+        for st in states { st.apply(config) }
+        vault.apply(config)
+        updateAIServices()
+        updateVimEngine()
+        commandPanel?.refresh()
+        render()
+    }
+
+    /// Re-read config.json (external edit, explicit reload, or a save of the
+    /// file in a tab) and apply it.
+    fileprivate func reloadConfig(announce: Bool) {
+        let ok = configStore.reload()
+        applyConfig()
+        guard announce else { return }
+        if !ok, let error = configStore.lastError {
+            showToast("\(error.localizedDescription) — keeping previous settings")
+        } else if !configStore.issues.isEmpty {
+            let n = configStore.issues.count
+            showToast("Config reloaded — \(n) issue\(n == 1 ? "" : "s") (Settings → Configuration)")
+        } else {
+            showToast("Config reloaded")
+        }
+    }
+
+    /// A tab saved its file; when it's config.json, apply the edit right away.
+    fileprivate func documentSaved(_ st: EditorState?) {
+        guard let st = st else { return }
+        if Vault.standardized(st.filePath) == Vault.standardized(configStore.path) {
+            reloadConfig(announce: true)
+        }
+    }
+
+    /// Open the unified settings UI (palette → Settings, Vim `:config`).
+    fileprivate func openConfigPanel() {
+        guard let panel = commandPanel else { return }
+        panel.setRoot(title: ConfigPanel.rootTitle, keyNavigation: true) { [weak self] in
+            self?.configPanel.rootCommands() ?? []
+        }
+        panel.show()
+        render()
+    }
+
+    var focusModeLabel: String { state.focusMode.label }
+
+    func cycleFocusMode() { state.cycleFocusMode() }
+
+    func promptInput(prompt: String, value: String, isSecret: Bool,
+                     validate: ((String) -> String?)?, onSubmit: @escaping (String) -> Void) {
+        commandPanel?.beginInput(prompt: prompt, value: value, isSecret: isSecret, validate: validate, onSubmit: onSubmit)
+    }
+
+    func openConfigFile() {
+        configStore.materialize()   // so a first-time user sees every key
+        commandPanel?.hide()
+        openFile(configStore.path)
+        render()
+    }
+
+    func reloadConfigFromDisk() { reloadConfig(announce: true) }
+
+    func resetConfigToDefaults() {
+        configStore.resetToDefaults()
+        applyConfig()
+        showToast("Settings reset to defaults")
+    }
+
+    func testAIConnection() {
+        guard aiEnabled, let service = llmService else {
+            showToast("AI is off — enable it first")
+            return
+        }
+        let name = configStore.current.ai.provider.displayName
+        showToast("Testing \(name)…")
+        service.checkConnection { [weak self] ok in
+            DispatchQueue.main.async {
+                self?.showToast(ok ? "\(name): connected" : "\(name): not reachable")
+            }
+        }
+    }
+
+    var openAISignInSupported: Bool {
+#if canImport(CryptoKit) && canImport(Network)
+        return true
+#else
+        return false
+#endif
+    }
+
+    func signInToOpenAI() { startOpenAIOAuth() }
+
+    func signOutOfOpenAI() {
+        changeConfig { config in
+            config.ai.openAIAccessToken = nil
+            config.ai.openAIRefreshToken = nil
+            config.ai.openAIExpiresAt = nil
+        }
+    }
+
+    // Test hooks.
+    func openConfigPanelForTest() { openConfigPanel() }
+    var commandPanelForTest: CommandPanel? { commandPanel }
+    var aiServicesActiveForTest: Bool { llmService != nil || llmModal != nil || openAIOAuth != nil }
+    var llmModalVisibleForTest: Bool { llmModal?.isVisible ?? false }
+    func paletteTitlesForTest() -> [String] { buildCommands().filter(\.isSelectable).map(\.title) }
+    func reloadConfigForTest() { reloadConfig(announce: false) }
+    var toastForTest: String? { toastText }
+}
+
+// MARK: - Vim host
+
+extension EditorApp: VimHost {
+    var vimState: EditorState { state }
+
+    var vimViewportHeight: Int { lastContentHeight }
+
+    func vimMessage(_ text: String, error: Bool) {
+        showToast(text)
+    }
+
+    /// Multi-line output (`:reg`, `:marks`, `:ls`, `:g/x/p`) as a read-only,
+    /// searchable list in the panel.
+    func vimShowList(title: String, rows: [(String, String)]) {
+        guard let panel = commandPanel else { return }
+        let commands = rows.isEmpty
+            ? [PaletteCommand.header("(none)")]
+            : rows.map { PaletteCommand(title: $0.0, shortcut: $0.1, action: {}) }
+        panel.setRoot(title: title, keyNavigation: true) { commands }
+        panel.show()
+    }
+
+    func vimSave() -> Bool { state.save() }
+
+    func vimSaveAll() -> Bool {
+        var ok = true
+        for st in states where st.isDirty {
+            if !st.save() { ok = false }
+        }
+        return ok
+    }
+
+    func vimQuit(force: Bool) -> String? {
+        if state.isDirty && !force { return "E37: No write since last change (add ! to override)" }
+        if states.count > 1 {
+            let closing = state
+            closing.persistCursorPosition()
+            states.remove(at: activeTab)
+            backStack.removeAll { $0 === closing }
+            if activeTab >= states.count { activeTab = states.count - 1 }
+            return nil
+        }
+        performExit()
+        return nil
+    }
+
+    func vimQuitAll(force: Bool) -> String? {
+        if !force, let dirty = states.first(where: { $0.isDirty }) {
+            let name = (dirty.filePath as NSString).lastPathComponent
+            return "E162: No write since last change for buffer \"\(name)\""
+        }
+        performExit()
+        return nil
+    }
+
+    func vimEdit(path: String?, force: Bool) -> String? {
+        guard let path = path else {
+            if state.isDirty && !force { return "E37: No write since last change (add ! to override)" }
+            state.reloadFromDisk()
+            return nil
+        }
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: absolutePath(path), isDirectory: &isDir), isDir.boolValue {
+            return "E502: \"\(path)\" is a directory"
+        }
+        openFile(path)
+        return nil
+    }
+
+    func vimSwitchTab(by delta: Int) { switchTab(by: delta) }
+
+    func vimGoToTab(_ index: Int) {
+        focusTab(max(0, min(index, states.count - 1)))
+    }
+
+    func vimAlternateFile() { goToPreviousTab() }
+
+    func vimTabList() -> [(name: String, active: Bool, modified: Bool)] {
+        states.enumerated().map { i, st in
+            ((st.filePath as NSString).lastPathComponent, i == activeTab, st.isDirty)
+        }
+    }
+
+    func vimOpenConfig() { openConfigPanel() }
+
+    func vimOpenHelp() {
+        if commandPanel?.isVisible == true { commandPanel?.hide() }
+        openShortcutsHelp()
+    }
+
+    func vimOpenQuickSwitcher() { openQuickSwitcher() }
+
+    func vimFollowLink() { followLinkUnderCursor() }
+
+    func vimChangeConfig(_ change: @escaping (inout Config) -> Void) { changeConfig(change) }
+
+    // Test hooks.
+    var vimForTest: VimEngine? { vim }
+
+    /// Feed Vim key notation (`ihello<Esc>`) through the same path as typing.
+    func vimKeysForTest(_ notation: String) {
+        guard let engine = vim else { return }
+        if vimAttachedState !== state {
+            vimAttachedState = state
+            engine.reset()
+        }
+        handleVimKeys(VimKey.parse(notation: notation), engine: engine)
     }
 }
 

@@ -43,8 +43,11 @@ Lint/format:
 - Sources/editxr/App: editor app lifecycle and rendering.
 - Sources/editxr/Models: editor state and data models.
 - Sources/editxr/Services: network and OAuth integration.
-- Sources/editxr/Views: TUI overlays and panels.
+- Sources/editxr/Views: TUI overlays and panels (CommandPanel, ConfigPanel).
 - Sources/editxr/Utils: key bindings, theming, markdown parsing.
+- Sources/editxr/Vim: optional Vim mode — VimEngine (modes, parser,
+  operators, registers), VimExCommands (`:` commands), VimText (pure motion /
+  text-object math), VimRegex (Vim pattern → ICU), VimKey (input tokens).
 
 ## Releasing
 
@@ -58,9 +61,15 @@ Lint/format:
 
 ## Configuration and runtime behavior
 
-- User config file: ~/.config/editxr/config.json
-- LLM provider defaults to LM Studio (http://localhost:1234).
+- User config file: ~/.config/editxr/config.json ($EDITXR_CONFIG overrides).
+  `ConfigStore.shared` owns it: typed `Config`, per-key validation, patch
+  saves (`update { $0.x = … }`), atomic writes, reload. Never write the file
+  directly. See CONFIGURATION.md.
+- AI is optional (`ai.enabled`, default off for new installs). With it off,
+  EditorApp creates no LLMService / LLMModal / OpenAIOAuth.
+- LLM provider defaults to LM Studio (`ai.endpoint`, http://localhost:1234).
 - OpenAI OAuth is optional and driven by env vars.
+- Vim mode (`vimMode`) routes input through VimEngine; see VIM_MODE.md.
 
 ## Memory policy (SimpleMem)
 
@@ -128,7 +137,8 @@ Lint/format:
 
 - EditorState is the single source of truth for UI state.
 - Keep view rendering pure: compute strings from state.
-- Update config via Config.save() whenever persistent settings change.
+- Update config via ConfigStore.shared.update { … } (or the app's
+  changeConfig, which also applies it to every tab) when settings change.
 
 ### Rendering and terminal output
 
@@ -176,6 +186,11 @@ the work is considered done. No exceptions for "it's just a one-liner".
   (MarkdownHTML / heading emphasis) and ReloadTests (external-change + reload).
 - When adding a render/markup/parse seam, expose a minimal `internal` hook so the
   test target can reach it via `@testable` rather than loosening `private`.
+- Tests that touch settings must use a throwaway store
+  (`ConfigStore.shared = ConfigStore(path: tmp)`), never the real config.
+- Vim tests subclass `VimTestCase` and drive keys with `app.vimKeysForTest`
+  (Vim notation: `ciwfoo<Esc>`, `<C-r>`); `processInputForTest` delivers raw
+  terminal input without the lone-ESC hold.
 
 ## Adding new features
 

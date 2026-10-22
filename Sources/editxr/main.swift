@@ -59,7 +59,7 @@ if let root = launch.directoryRoot {
 // (the same precedence Vault uses) so `makeStates` can open its primary file;
 // when nothing is configured the states stay empty and help is printed below.
 var configuredVaultRoot: String?
-if launch.openVault, let path = Config.load().vaultPath, !path.isEmpty {
+if launch.openVault, let path = ConfigStore.shared.current.vaultPath, !path.isEmpty {
     configuredVaultRoot = Vault.standardized(path)
 }
 

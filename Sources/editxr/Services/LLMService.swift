@@ -3,20 +3,29 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Configuration for LLM provider
+/// Connection settings for the OpenAI-compatible providers, taken from the
+/// `ai` section of the configuration (see `LLMConfig.init(ai:)`).
 struct LLMConfig {
-    var host: String = "localhost"
-    var port: Int = 1234
-    var model: String = "qwen2.5-7b-instruct"
+    /// Base URL of the LM Studio (or other OpenAI-compatible) server.
+    var baseURL: String = AIConfig.defaultEndpoint
+    var model: String = AIConfig.defaultLMStudioModel
+    var openAIModel: String = AIConfig.defaultOpenAIModel
     var maxTokens: Int = 1024
     var temperature: Float = 0.7
-    
-    var baseURL: String {
-        "http://\(host):\(port)"
-    }
-    
-    static func load(from path: String? = nil) -> LLMConfig {
-        return LLMConfig()
+
+    init() {}
+
+    init(ai: AIConfig) {
+        var base = ai.endpoint.trimmingCharacters(in: .whitespaces)
+        while base.hasSuffix("/") { base.removeLast() }
+        if base.isEmpty { base = AIConfig.defaultEndpoint }
+        baseURL = base
+        if let model = ai.model, !model.isEmpty { self.model = model }
+        if let model = ai.openAIModel, !model.isEmpty {
+            openAIModel = model
+        } else if let env = ProcessInfo.processInfo.environment["OPENAI_MODEL"], !env.isEmpty {
+            openAIModel = env
+        }
     }
 }
 
@@ -102,6 +111,14 @@ class LLMService {
         self.config = config
     }
 
+    /// Point the service at the provider and credentials in `ai`.
+    func configure(_ ai: AIConfig) {
+        config = LLMConfig(ai: ai)
+        openRouterKey = ai.openRouterKey
+        openRouterModel = ai.openRouterModel
+        setProvider(ai.provider, openAIAccessToken: ai.openAIAccessToken)
+    }
+
     func setProvider(_ provider: LLMProvider, openAIAccessToken: String?) {
         self.provider = provider
         self.openAIAccessToken = openAIAccessToken
@@ -114,12 +131,10 @@ class LLMService {
         case .lmStudio:
             return (config.baseURL, config.model, nil)
         case .openaiOAuth:
-            return ("https://api.openai.com",
-                    ProcessInfo.processInfo.environment["OPENAI_MODEL"] ?? "gpt-4o-mini",
-                    openAIAccessToken)
+            return ("https://api.openai.com", config.openAIModel, openAIAccessToken)
         case .openRouter:
             return ("https://openrouter.ai/api",
-                    (openRouterModel?.isEmpty == false ? openRouterModel! : "openai/gpt-4o-mini"),
+                    (openRouterModel?.isEmpty == false ? openRouterModel! : AIConfig.defaultOpenRouterModel),
                     openRouterKey)
         case .mock:
             return ("", "mock", nil)
@@ -168,7 +183,7 @@ class LLMService {
         if provider == .mock { completion(true); return }
 
         let ep = endpoint()
-        let url = URL(string: "\(ep.base)/v1/models")!
+        guard let url = URL(string: "\(ep.base)/v1/models") else { completion(false); return }
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
 
@@ -198,7 +213,10 @@ class LLMService {
         }
 
         let ep = endpoint()
-        let url = URL(string: "\(ep.base)/v1/chat/completions")!
+        guard let url = URL(string: "\(ep.base)/v1/chat/completions") else {
+            completion(.failure(.connectionFailed("invalid endpoint \(ep.base)")))
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -298,7 +316,10 @@ class LLMService {
         }
 
         let ep = endpoint()
-        let url = URL(string: "\(ep.base)/v1/chat/completions")!
+        guard let url = URL(string: "\(ep.base)/v1/chat/completions") else {
+            onComplete(.failure(.connectionFailed("invalid endpoint \(ep.base)")))
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

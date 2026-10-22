@@ -38,7 +38,7 @@ final class OpenVaultCommandTests: XCTestCase {
         // The negative case depends on the machine's real config (Vault reads
         // config.vaultPath), so only assert it when nothing is configured there.
         Vault.commandLineRoot = nil
-        if Config.load().vaultPath == nil {
+        if ConfigStore.shared.current.vaultPath == nil {
             let unconfigured = EditorApp(states: [EditorState(filePath: vault + "/README.md")])
             XCTAssertFalse(unconfigured.vaultMenuTitlesForTest().contains("Open vault"),
                            "no configured vault → no Open vault row")

@@ -45,14 +45,26 @@ final class Vault {
     private(set) var maxResults: Int
 
     init() {
-        let config = Config.load()
+        let config = ConfigStore.shared.current
         self.configuredRoot = Vault.commandLineRoot ?? config.vaultPath
         self.recents = config.recentVaults ?? []
-        self.semanticSearch = config.vaultSemanticSearch ?? true
+        self.semanticSearch = config.vaultSemanticSearch
         self.backend = config.vaultEmbedBackend.flatMap(EmbedBackend.init(rawValue:)) ?? .auto
-        self.includeText = config.vaultIncludeTxt ?? true
-        self.indexOnOpen = config.vaultIndexOnOpen ?? true
-        self.maxResults = Vault.clampResults(config.vaultMaxResults ?? 10)
+        self.includeText = config.vaultIncludeTxt
+        self.indexOnOpen = config.vaultIndexOnOpen
+        self.maxResults = Vault.clampResults(config.vaultMaxResults)
+    }
+
+    /// Re-read the vault settings after the configuration changed (reload from
+    /// disk, reset). A `--vault` root for this run still wins.
+    func apply(_ config: Config) {
+        configuredRoot = Vault.commandLineRoot ?? config.vaultPath
+        recents = config.recentVaults ?? []
+        semanticSearch = config.vaultSemanticSearch
+        backend = config.vaultEmbedBackend.flatMap(EmbedBackend.init(rawValue:)) ?? .auto
+        includeText = config.vaultIncludeTxt
+        indexOnOpen = config.vaultIndexOnOpen
+        maxResults = Vault.clampResults(config.vaultMaxResults)
     }
 
     // MARK: - Root resolution
@@ -149,16 +161,16 @@ final class Vault {
     func setIndexOnOpen(_ on: Bool) { indexOnOpen = on; save() }
     func setMaxResults(_ n: Int) { maxResults = Vault.clampResults(n); save() }
 
-    /// Load-modify-save so the fields EditorState owns survive untouched.
+    /// Patch only the vault fields so everything else survives untouched.
     private func save() {
-        var config = Config.load()
-        config.vaultPath = configuredRoot
-        config.recentVaults = recents.isEmpty ? nil : recents
-        config.vaultSemanticSearch = semanticSearch
-        config.vaultEmbedBackend = backend.rawValue
-        config.vaultIncludeTxt = includeText
-        config.vaultIndexOnOpen = indexOnOpen
-        config.vaultMaxResults = maxResults
-        config.save()
+        ConfigStore.shared.update { config in
+            config.vaultPath = configuredRoot
+            config.recentVaults = recents.isEmpty ? nil : recents
+            config.vaultSemanticSearch = semanticSearch
+            config.vaultEmbedBackend = backend.rawValue
+            config.vaultIncludeTxt = includeText
+            config.vaultIndexOnOpen = indexOnOpen
+            config.vaultMaxResults = maxResults
+        }
     }
 }
