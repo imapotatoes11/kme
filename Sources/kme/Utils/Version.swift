@@ -1,0 +1,35 @@
+import Foundation
+
+/// App identity + CLI help text, shared by `main` and the welcome splash.
+enum AppInfo {
+    static let name = "kme"
+    static let version = "1.9.0"
+    static let tagline = "a minimalist Markdown editor for the terminal"
+
+    static var helpText: String {
+        """
+        \(name) \(version) — \(tagline)
+
+        Usage:
+          \(name) <file>...       Open or create Markdown files (one tab each)
+          \(name) .               Open the folder with the file-explorer sidebar
+          \(name) --vault <dir>   Use <dir> as the vault for this run
+          \(name) --vault         Open the configured vault
+          \(name) --help          Show this help
+          \(name) --version       Print the version
+
+        Inside the editor:
+          Ctrl+P    command palette / settings (Vim mode: :config)
+          Ctrl+S    save               Ctrl+Q   quit
+          Ctrl+F    find               Ctrl+G   find next
+          Ctrl+Space  AI assist (when enabled)   Ctrl+E   export to HTML
+          Ctrl+R    toggle raw view    Ctrl+J   close tab
+          Ctrl+T    cycle task state   Ctrl+B   focus mode (line / word)
+          Ctrl+C    copy               Ctrl+X   cut
+          Ctrl+V    paste              Ctrl+A   select all
+          Ctrl+O    open file          Ctrl+N   next tab
+          Ctrl+]    follow link        Ctrl+[   back (previous file)
+          Ctrl+K    vault              Ctrl+/   all shortcuts
+        """
+    }
+}

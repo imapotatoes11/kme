@@ -1,8 +1,8 @@
-# editxr agent guide
+# kme agent guide
 
 This repository is a Swift Package Manager (SPM) project for a
 terminal-based Markdown editor. The codebase is small and mostly lives
-under Sources/editxr.
+under Sources/kme.
 
 If there are cursor or copilot rules, follow them first. None were found
 in this repo.
@@ -13,20 +13,20 @@ Build (debug):
 - swift build
 
 Run (debug):
-- swift run editxr path/to/file.md
-- ./.build/debug/editxr path/to/file.md
+- swift run kme path/to/file.md
+- ./.build/debug/kme path/to/file.md
 
 Build (release):
 - swift build -c release
 
 Run (release):
-- ./.build/release/editxr path/to/file.md
+- ./.build/release/kme path/to/file.md
 
 Tests:
 - swift test
 - On this machine plain `swift build`/`swift test` may hit a beta-SDK issue; use
   the Command Line Tools SDK: `xcrun --sdk macosx swift test`.
-- Test target: `editxrTests` (Tests/editxrTests), `@testable import editxr`.
+- Test target: `kmeTests` (Tests/kmeTests), `@testable import kme`.
 
 Single test:
 - swift test --filter <TestCase>/<testMethod>
@@ -39,13 +39,13 @@ Lint/format:
 ## Repo layout
 
 - Package.swift: SPM manifest (Swift 5.9, macOS 12+).
-- Sources/editxr/main.swift: CLI entry point.
-- Sources/editxr/App: editor app lifecycle and rendering.
-- Sources/editxr/Models: editor state and data models.
-- Sources/editxr/Services: network and OAuth integration.
-- Sources/editxr/Views: TUI overlays and panels (CommandPanel, ConfigPanel).
-- Sources/editxr/Utils: key bindings, theming, markdown parsing.
-- Sources/editxr/Vim: optional Vim mode — VimEngine (modes, parser,
+- Sources/kme/main.swift: CLI entry point.
+- Sources/kme/App: editor app lifecycle and rendering.
+- Sources/kme/Models: editor state and data models.
+- Sources/kme/Services: network and OAuth integration.
+- Sources/kme/Views: TUI overlays and panels (CommandPanel, ConfigPanel).
+- Sources/kme/Utils: key bindings, theming, markdown parsing.
+- Sources/kme/Vim: optional Vim mode — VimEngine (modes, parser,
   operators, registers), VimExCommands (`:` commands), VimText (pure motion /
   text-object math), VimRegex (Vim pattern → ICU), VimKey (input tokens).
 
@@ -61,7 +61,7 @@ Lint/format:
 
 ## Configuration and runtime behavior
 
-- User config file: ~/.config/editxr/config.json ($EDITXR_CONFIG overrides).
+- User config file: ~/.config/kme/config.json ($KME_CONFIG overrides).
   `ConfigStore.shared` owns it: typed `Config`, per-key validation, patch
   saves (`update { $0.x = … }`), atomic writes, reload. Never write the file
   directly. See CONFIGURATION.md.
@@ -202,7 +202,7 @@ the work is considered done. No exceptions for "it's just a one-liner".
 ## Notes for agents
 
 - No Cursor or Copilot rule files are present in the repo.
-- The executable target is `editxr`; tests live in the `editxrTests` target.
+- The executable target is `kme`; tests live in the `kmeTests` target.
 - Keep changes minimal and consistent with the current style.
 - Use english for git messages.
 - Use english for code and comments.

@@ -43,13 +43,13 @@ for arch in "${ARCHES[@]}"; do
     # arch we're cross-compiling (a host `strip` only handles its native arch).
     "$SWIFT" build -c release --swift-sdk "$triple" --scratch-path "$scratch" -Xlinker -s
 
-    bin="$("$SWIFT" build -c release --swift-sdk "$triple" --scratch-path "$scratch" --show-bin-path)/editxr"
+    bin="$("$SWIFT" build -c release --swift-sdk "$triple" --scratch-path "$scratch" --show-bin-path)/kme"
 
-    out="editxr-${VERSION}-linux-${arch}"
+    out="kme-${VERSION}-linux-${arch}"
     stage="dist/stage-${arch}"
     rm -rf "$stage" && mkdir -p "$stage"
-    cp "$bin" "$stage/editxr"
-    ( cd "$stage" && tar -czf "../${out}.tar.gz" editxr )
+    cp "$bin" "$stage/kme"
+    ( cd "$stage" && tar -czf "../${out}.tar.gz" kme )
     echo "    dist/${out}.tar.gz  sha256: $(shasum -a 256 "dist/${out}.tar.gz" | awk '{print $1}')"
 done
 

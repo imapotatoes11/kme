@@ -1,12 +1,12 @@
 ---
-title: Welcome to editxr
+title: Welcome to kme
 author: you
 ---
 
-# editxr
+# kme
 
 A minimalist Markdown editor for the terminal. Open this file with
-`editxr example.md` to see how it renders.
+`kme example.md` to see how it renders.
 
 This is a paragraph with **bold**, *italic*, and `inline code`. Long lines
 soft-wrap to the window width when word wrap is on (toggle with Ctrl+W).

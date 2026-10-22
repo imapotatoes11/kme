@@ -1,4 +1,4 @@
-# editxr Launch Plan — 1.4.0 (Windows + Obsidian-style linking)
+# kme Launch Plan — 1.4.0 (Windows + Obsidian-style linking)
 
 **Type:** Major-update launch · **Budget:** Organic only · **Reach:** pixdeo blog + X (otherwise cold)
 **Target launch day:** Wed, July 1, 2026 (fallback: Tue, July 7) · **Plan created:** 2026-06-21
@@ -19,7 +19,7 @@ Lead with the story, not the feature list. Two hooks, pick the dominant one per 
    zero deps, instant open, one binary, macOS/Linux/Windows. Best for Show HN + r/swift.
 
 One-liner to reuse everywhere:
-> editxr — a WYSIWYG Markdown editor for the terminal. Renders as you type, follows
+> kme — a WYSIWYG Markdown editor for the terminal. Renders as you type, follows
 > `[[wikilinks]]` like Obsidian, edits sections with AI inline diffs. 100% Swift, zero
 > deps, instant. macOS, Linux & Windows.
 
@@ -31,7 +31,7 @@ One-liner to reuse everywhere:
 - [x] Landing page live (committed)
 - [x] "Obsidian in the terminal" blog post (committed) — schedule/publish for launch morning
 - [x] Demo GIFs: render, ai, links, themes, focus, raw, find, open
-- [x] Homebrew tap (`brew install pixdeo/tap/editxr`)
+- [x] Homebrew tap (`brew install imapotatoes11/tap/kme`)
 - [x] Signed & notarised macOS universal + Linux x86_64/aarch64 + Windows x64 binaries
 - [ ] **Cut & tag the 1.4.0 release** with all platform binaries attached (do this 2–3 days early so installs work on launch day)
 - [ ] Verify `curl … install.sh | bash` works clean on a fresh macOS, Linux, and Windows box
@@ -100,7 +100,7 @@ One-liner to reuse everywhere:
 
 ## Channels — full distribution list
 
-Show HN is a lottery; Reddit + niche communities are where editxr's people are.
+Show HN is a lottery; Reddit + niche communities are where kme's people are.
 Ordered by fit. ⭐ = highest ROI, do these first.
 
 ### A. PKM / Obsidian — your strongest untapped angle ("Obsidian in the terminal")
@@ -161,11 +161,11 @@ Ordered by fit. ⭐ = highest ROI, do these first.
 ## Copy bank
 
 **Show HN title** (no hype, factual, the surprise is "terminal + Obsidian + Windows"):
-> Show HN: editxr – a WYSIWYG Markdown editor for the terminal (Swift, zero deps)
+> Show HN: kme – a WYSIWYG Markdown editor for the terminal (Swift, zero deps)
 
 **Show HN first comment** (be the maker, lead with the "why"):
 > I wanted Obsidian's [[wikilinks]] and live-rendered Markdown, but in a terminal that
-> opens instantly and works over SSH. editxr renders Markdown in place as you type
+> opens instantly and works over SSH. kme renders Markdown in place as you type
 > (the line you're on stays raw), follows `[[links]]` and backlinks across notes, and
 > can hand a section to an LLM and show the change as an inline diff before it lands.
 > It's a single native Swift binary, no dependencies, and as of 1.4.0 it runs on
@@ -176,7 +176,7 @@ Ordered by fit. ⭐ = highest ROI, do these first.
 > Obsidian-style Markdown editing, in your terminal
 
 **X launch post:**
-> editxr 1.4.0 is out 🎉
+> kme 1.4.0 is out 🎉
 > A Markdown editor that lives in your terminal — renders as you type, follows
 > [[wikilinks]] like Obsidian, edits sections with AI inline diffs.
 > 100% Swift · zero deps · opens instantly · macOS, Linux & now Windows.

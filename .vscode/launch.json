@@ -4,21 +4,21 @@
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:editxr}",
-      "name": "Debug editxr",
-      "target": "editxr",
+      "cwd": "${workspaceFolder:kme}",
+      "name": "Debug kme",
+      "target": "kme",
       "configuration": "debug",
-      "preLaunchTask": "swift: Build Debug editxr"
+      "preLaunchTask": "swift: Build Debug kme"
     },
     {
       "type": "swift",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:editxr}",
-      "name": "Release editxr",
-      "target": "editxr",
+      "cwd": "${workspaceFolder:kme}",
+      "name": "Release kme",
+      "target": "kme",
       "configuration": "release",
-      "preLaunchTask": "swift: Build Release editxr"
+      "preLaunchTask": "swift: Build Release kme"
     }
   ]
 }

@@ -5,7 +5,7 @@ Markdown still renders live, list items continue on `Enter`, tasks toggle,
 and every non-Vim feature (tabs, vault, outline, AI review) works the same.
 
 Turn it on in **Settings → Editor → Vim Mode** (`Ctrl+P` → Settings), or set
-`"vimMode": true` in `~/.config/editxr/config.json`. It applies immediately.
+`"vimMode": true` in `~/.config/kme/config.json`. It applies immediately.
 `:config` opens the settings from inside Vim mode.
 
 The status bar shows the mode (`NORMAL`, `INSERT`, `REPLACE`, `VISUAL`,

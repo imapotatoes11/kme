@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="editxr.png" alt="kme" width="420">
-</p>
+<h1 align="center">kme</h1>
 
 <p align="center">
   A WYSIWYG Markdown editor for the terminal. AI-assisted, 100% Swift, zero dependencies. macOS, Linux &amp; Windows.
@@ -63,7 +61,7 @@ This is a **test** with *markdown*.
 - **Live Markdown rendering.** Headings, emphasis, lists, task lists, tables,
   blockquotes, code blocks, and YAML frontmatter are styled in place, while the
   line you're editing stays plain text.
-- **Multi-file workspace.** Open files in tabs (`editxr a.md b.md`, or `Ctrl+O`
+- **Multi-file workspace.** Open files in tabs (`kme a.md b.md`, or `Ctrl+O`
   to fuzzy-find any file in the folder tree). `Ctrl+N` cycles tabs, `Ctrl+[`
   goes back to the previous file, `Ctrl+J` closes the tab. **New file…** in the
   command palette (`Ctrl+P`) creates a note — vault-relative, `.md` by default,
@@ -117,30 +115,30 @@ One-liner (downloads the prebuilt binary for your platform; falls back to
 building from source):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pixdeo/editxr/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/imapotatoes11/kme/main/install.sh | bash
 ```
 
 Homebrew (via the tap):
 
 ```bash
-brew install pixdeo/tap/editxr
+brew install imapotatoes11/tap/kme
 ```
 
 Prebuilt binaries are attached to every
-[release](https://github.com/pixdeo/editxr/releases):
+[release](https://github.com/imapotatoes11/kme/releases):
 
 | Platform | Package |
 | --- | --- |
-| macOS (Apple Silicon + Intel) | `editxr-<version>-macos-universal.zip` — signed & notarised universal binary |
-| Linux x86_64 | `editxr-<version>-linux-x86_64.tar.gz` — static (musl), no dependencies |
-| Linux aarch64 | `editxr-<version>-linux-aarch64.tar.gz` — static (musl), no dependencies |
-| Windows x64 | `editxr-<version>-windows-x64.zip` — self-contained (exe + Swift runtime DLLs) |
+| macOS (Apple Silicon + Intel) | `kme-<version>-macos-universal.zip` — signed & notarised universal binary |
+| Linux x86_64 | `kme-<version>-linux-x86_64.tar.gz` — static (musl), no dependencies |
+| Linux aarch64 | `kme-<version>-linux-aarch64.tar.gz` — static (musl), no dependencies |
+| Windows x64 | `kme-<version>-windows-x64.zip` — self-contained (exe + Swift runtime DLLs) |
 
 The Linux binaries are statically linked against musl, so a single download runs
 on any distro (Ubuntu, Debian, Alpine, Fedora, …) with no Swift runtime
 installed. To build from source instead, pass `FROM_SOURCE=1` to the installer.
 
-On Windows, unzip and run `editxr.exe` (best in Windows Terminal). The x64 build
+On Windows, unzip and run `kme.exe` (best in Windows Terminal). The x64 build
 also runs on Windows on ARM via the OS's built-in x64 emulation. Clipboard, theme
 auto-detection and OpenAI OAuth sign-in fall back gracefully there for now.
 
@@ -150,7 +148,7 @@ kme is a Swift Package. On most machines:
 
 ```bash
 swift build -c release
-swift run editxr path/to/file.md
+swift run kme path/to/file.md
 ```
 
 A `build.sh` wrapper is included for environments where the default Xcode SDK
@@ -159,7 +157,7 @@ fails to compile (it uses the Command Line Tools toolchain):
 ```bash
 ./build.sh                 # debug build
 ./build.sh run file.md     # run
-./build.sh install         # release build + copy to /usr/local/bin/editxr
+./build.sh install         # release build + copy to /usr/local/bin/kme
 ```
 
 `example-vault/` is a small linked note collection to try the vault features
@@ -167,11 +165,11 @@ on — a handful of notes that reference each other, enough for `Ctrl+K` search
 and `[[wikilink]]` navigation to have somewhere to go:
 
 ```bash
-swift run editxr --vault example-vault "example-vault/Home.md"
+swift run kme --vault example-vault "example-vault/Home.md"
 ```
 
 Once a vault is configured (via **Settings → Vault** in the palette, or
-`--vault <dir>`), `editxr --vault` with no path opens that vault directly —
+`--vault <dir>`), `kme --vault` with no path opens that vault directly —
 the file-explorer sidebar on its primary file. The same action is available
 inside the editor as **Open vault** in the command palette.
 
@@ -236,8 +234,8 @@ reference and what isn't supported.
 Every setting lives in one keyboard-driven menu: **Settings** in the command
 palette (`Ctrl+P`), or `:config` in Vim mode. Arrows or `j`/`k` move, `Enter`
 selects or edits, `/` searches, `Esc` goes back. Changes apply immediately and
-are saved to `~/.config/editxr/config.json` (override the path with
-`$EDITXR_CONFIG`).
+are saved to `~/.config/kme/config.json` (override the path with
+`$KME_CONFIG`).
 
 The JSON file is the source of truth and is meant to be hand-edited: **Settings
 → Configuration → Open Config File** opens it in a tab, and saving it applies
@@ -265,7 +263,7 @@ With AI off, no AI service is started and no request is made; the AI actions
 and `Ctrl+Space` are hidden, and your provider settings and keys are kept for
 when you turn it back on.
 
-Per-file cursor positions are stored in `~/.config/editxr/positions.json`.
+Per-file cursor positions are stored in `~/.config/kme/positions.json`.
 
 ## Roadmap
 
@@ -273,7 +271,7 @@ Per-file cursor positions are stored in `~/.config/editxr/positions.json`.
   editor toward an Obsidian-like workspace, in order of difficulty: (1) tabs for
   multiple open files ✅; (2) recursive directory scan with a fuzzy quick-switcher
   (`Ctrl+O`) ✅; (3) navigable `[text](path)` and `[[wikilinks]]` that open in a
-  tab ✅; (4) a sidebar file list (`editxr ./folder` opens a folder) ✅, with a
+  tab ✅; (4) a sidebar file list (`kme ./folder` opens a folder) ✅, with a
   docked heading outline alongside it; (5) a live backlinks panel (a link graph
   re-indexed on save). Prerequisite for the
   backlinks panel: extract a **render compositor** so regions render into their
@@ -289,7 +287,7 @@ Per-file cursor positions are stored in `~/.config/editxr/positions.json`.
   console backend (`GetConsoleMode` / VT processing).
   [`PORTING_TO_WINDOWS.md`](PORTING_TO_WINDOWS.md) documents the port and what
   is still open (clipboard tools).
-- [x] **Homebrew tap.** `brew install pixdeo/tap/editxr` works.
+- [x] **Homebrew tap.** `brew install imapotatoes11/tap/kme` works.
 - [ ] **Inline image rendering.** Draw Markdown images (`![alt](pic.png)`)
   directly in the editor using terminal graphics protocols (iTerm2 inline
   images / Kitty graphics / Sixel), with a block-character fallback for

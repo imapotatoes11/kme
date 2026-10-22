@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a universal (arm64 + x86_64), Developer ID-signed and notarised editxr
+# Build a universal (arm64 + x86_64), Developer ID-signed and notarised kme
 # binary, zipped for a GitHub release.
 #
 # Prerequisites (one-time):
@@ -30,19 +30,19 @@ echo "==> Building universal release ($VERSION)"
   -Xswiftc -target -Xswiftc x86_64-apple-macosx12.0 \
   -Xcc -target -Xcc x86_64-apple-macosx12.0 \
   -Xlinker -arch -Xlinker x86_64
-BIN=".build-universal/editxr"
+BIN=".build-universal/kme"
 mkdir -p .build-universal
-lipo -create .build-arm64/release/editxr .build-x86/release/editxr -output "$BIN"
+lipo -create .build-arm64/release/kme .build-x86/release/kme -output "$BIN"
 lipo -info "$BIN"
 
 echo "==> Signing as: $SIGN_ID"
 codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$BIN"
 codesign --verify --strict --verbose=2 "$BIN"
 
-OUT="editxr-$VERSION-macos-universal"
+OUT="kme-$VERSION-macos-universal"
 rm -rf dist && mkdir -p dist/stage
-cp "$BIN" dist/stage/editxr
-( cd dist/stage && zip -q "../$OUT.zip" editxr )
+cp "$BIN" dist/stage/kme
+( cd dist/stage && zip -q "../$OUT.zip" kme )
 
 echo "==> Notarising (this can take a minute)"
 xcrun notarytool submit "dist/$OUT.zip" --keychain-profile "$NOTARY_PROFILE" --wait

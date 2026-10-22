@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "editxr",
+    name: "kme",
     platforms: [
         .macOS(.v12)
     ],
     targets: [
         .executableTarget(
-            name: "editxr"
+            name: "kme"
         ),
         .testTarget(
-            name: "editxrTests",
-            dependencies: ["editxr"]
+            name: "kmeTests",
+            dependencies: ["kme"]
         ),
     ]
 )

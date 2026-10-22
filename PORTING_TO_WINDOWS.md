@@ -1,6 +1,6 @@
-# Porting editxr to Windows
+# Porting kme to Windows
 
-editxr is a pure-Swift terminal text editor that currently targets macOS and
+kme is a pure-Swift terminal text editor that currently targets macOS and
 Linux. It leans heavily on POSIX terminal primitives (`termios`, `ioctl`,
 signals, `/dev/tty`). This document tracks what blocks Windows, the chosen
 approach, and the concrete work items.
@@ -18,7 +18,7 @@ fallbacks/stubs.
   equivalent. The existing `termios`/`ioctl` logic is only *moved* behind a thin
   platform layer, never rewritten.
 - **Modularize behind a single seam.** All OS branching lives in one place
-  (`Sources/editxr/Platform/`) using `#if os(Windows)` / `#else`. Call sites stay
+  (`Sources/kme/Platform/`) using `#if os(Windows)` / `#else`. Call sites stay
   platform-agnostic.
 - **Keep ANSI as the lingua franca.** Windows 10+ console (conhost) and Windows
   Terminal support VT sequences via `ENABLE_VIRTUAL_TERMINAL_PROCESSING`
@@ -56,7 +56,7 @@ fallbacks/stubs.
 
 ## Design: the platform seam
 
-New file `Sources/editxr/Platform/PlatformTerminal.swift` exposes a small,
+New file `Sources/kme/Platform/PlatformTerminal.swift` exposes a small,
 platform-agnostic surface. Two implementations behind `#if os(Windows)` / `#else`:
 
 ```
@@ -80,7 +80,7 @@ symbols directly.
 
 ## Work items (core: editing works)
 
-- [x] Add `Sources/editxr/Platform/PlatformTerminal.swift` with POSIX + Windows
+- [x] Add `Sources/kme/Platform/PlatformTerminal.swift` with POSIX + Windows
       backends (raw mode, size, input loop, resize watch).
 - [x] Route `EditorApp.swift` `setInputMode`/`resetInputMode`/`getTerminalSize`
       and the `start()` input/resize setup through the platform layer.
@@ -126,7 +126,7 @@ stays intact; the Windows path is verified later via CI or the VM.
 ## Status
 
 **Working on Windows.** The platform seam
-(`Sources/editxr/Platform/PlatformTerminal.swift`) is in place; editxr compiles on
+(`Sources/kme/Platform/PlatformTerminal.swift`) is in place; kme compiles on
 Windows (x64) and Linux, and has been **run on a Windows 11 ARM VM** (the x64
 build via the OS's Prism emulation): splash, raw mode, VT rendering, keyboard
 input and quit all work. `.github/workflows/windows.yml` builds x64 and, on a

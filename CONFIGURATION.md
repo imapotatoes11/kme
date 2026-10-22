@@ -1,7 +1,7 @@
 # Configuration
 
-editxr has one configuration: `~/.config/editxr/config.json` (or the path in
-`$EDITXR_CONFIG`). The settings menu and the file always describe the same
+kme has one configuration: `~/.config/kme/config.json` (or the path in
+`$KME_CONFIG`). The settings menu and the file always describe the same
 state. Use whichever you like:
 
 - **Settings menu:** `Ctrl+P` → **Settings**, or `:config` in Vim mode. Arrows
@@ -25,7 +25,7 @@ state. Use whichever you like:
   previous settings stay in effect, the error is shown, and setting changes
   apply for the session only until the file is fixed.
 - **Your edits are kept.** Saving a setting re-reads the file and changes only
-  that key, so hand edits made in the meantime survive. Keys editxr doesn't
+  that key, so hand edits made in the meantime survive. Keys kme doesn't
   know are preserved.
 - **Saves are atomic** (temp file + rename) and keep the file's permissions; a
   new file is created owner-only (`0600`) because it may hold API keys.
@@ -116,7 +116,7 @@ keys are removed; everything else is kept.
   **Settings** entry (their rows still turn up in palette search).
 - New installs start with AI disabled.
 - After the first save, a config is in the new layout (`ai` section). An
-  older editxr reading it won't find its flat AI keys and will use its
-  defaults for them; older versions also required `wordWrap` /
+  older version (or editxr) reading it won't find its flat AI keys and will
+  use its defaults for them; older versions also required `wordWrap` /
   `renderMarkdown` / `llmProvider` to be present, so hand-trimmed partial
   files only work with this version.

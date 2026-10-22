@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build/run editxr using the CommandLineTools toolchain.
+# Build/run kme using the CommandLineTools toolchain.
 #
 # Why: the default Xcode SDK on this machine (MacOSX26.2 beta) fails to compile
 # Foundation/Darwin ("unknown type name 'uuid_string_t'"). CommandLineTools ships
@@ -7,8 +7,8 @@
 #
 # Usage:
 #   ./build.sh              # swift build (debug)
-#   ./build.sh run FILE.md  # swift run editxr FILE.md
-#   ./build.sh install      # release build + copy to /usr/local/bin/editxr
+#   ./build.sh run FILE.md  # swift run kme FILE.md
+#   ./build.sh install      # release build + copy to /usr/local/bin/kme
 #   ./build.sh <args...>    # pass any args straight to swift
 set -euo pipefail
 
@@ -34,10 +34,10 @@ if [ "$#" -eq 0 ]; then
     exec "$SWIFT" build
 fi
 
-# `./build.sh run FILE.md` -> swift run editxr FILE.md
+# `./build.sh run FILE.md` -> swift run kme FILE.md
 if [ "$1" = "run" ]; then
     shift
-    exec "$SWIFT" run editxr "$@"
+    exec "$SWIFT" run kme "$@"
 fi
 
 # `./build.sh install` -> release build, then copy the binary onto $PATH
@@ -45,8 +45,8 @@ if [ "$1" = "install" ]; then
     echo "Building release…"
     "$SWIFT" build -c release
     mkdir -p "$PREFIX" 2>/dev/null || sudo mkdir -p "$PREFIX"
-    install_bin "$(pwd)/.build/release/editxr" "$PREFIX/editxr"
-    echo "Installed editxr -> $PREFIX/editxr"
+    install_bin "$(pwd)/.build/release/kme" "$PREFIX/kme"
+    echo "Installed kme -> $PREFIX/kme"
     exit 0
 fi
 

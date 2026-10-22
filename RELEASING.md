@@ -1,4 +1,4 @@
-# Releasing editxr
+# Releasing kme
 
 Prebuilt binaries are attached to every GitHub release. There are two build
 paths, by platform, and they meet at one set of asset names that `install.sh`
@@ -6,9 +6,9 @@ relies on.
 
 | Platform | Built by | Where it runs | Asset |
 | --- | --- | --- | --- |
-| macOS (universal) | `scripts/release.sh` | manual, on a Mac | `editxr-<version>-macos-universal.zip` |
-| Linux x86_64 | `scripts/release-linux.sh` | CI (`.github/workflows/release.yml`) | `editxr-<version>-linux-x86_64.tar.gz` |
-| Linux aarch64 | `scripts/release-linux.sh` | CI | `editxr-<version>-linux-aarch64.tar.gz` |
+| macOS (universal) | `scripts/release.sh` | manual, on a Mac | `kme-<version>-macos-universal.zip` |
+| Linux x86_64 | `scripts/release-linux.sh` | CI (`.github/workflows/release.yml`) | `kme-<version>-linux-x86_64.tar.gz` |
+| Linux aarch64 | `scripts/release-linux.sh` | CI | `kme-<version>-linux-aarch64.tar.gz` |
 
 ## Procedure
 
@@ -16,18 +16,18 @@ relies on.
 2. **macOS (manual, on a Mac):** `scripts/release.sh vX.Y.Z`. This builds the
    universal binary, signs and notarises it, and writes the zip to `dist/`.
    Create the GitHub release and upload that zip
-   (`gh release create vX.Y.Z dist/editxr-vX.Y.Z-macos-universal.zip ...`).
+   (`gh release create vX.Y.Z dist/kme-vX.Y.Z-macos-universal.zip ...`).
 3. **Linux (CI):** `git push origin vX.Y.Z`. The `release` workflow builds the
    two static tarballs and attaches them to a **draft** release for the tag. (You
    can also run it from the Actions tab via `workflow_dispatch`, passing the tag.)
 4. **Publish:** upload the macOS zip to that draft release
-   (`gh release upload vX.Y.Z dist/editxr-vX.Y.Z-macos-universal.zip`) and
+   (`gh release upload vX.Y.Z dist/kme-vX.Y.Z-macos-universal.zip`) and
    publish it (`gh release edit vX.Y.Z --draft=false`). The release is kept a
    draft until the macOS zip is present so it never becomes the "latest" that
    `install.sh` reads with the Linux binaries only.
 5. **Homebrew tap:** run `scripts/bump-homebrew.sh vX.Y.Z`. It reads the sha256
    from the local `dist/` zip (or downloads the published asset), rewrites the
-   formula in `pixdeo/homebrew-tap`, and commits + pushes it. Re-running is safe
+   formula in `imapotatoes11/homebrew-tap`, and commits + pushes it. Re-running is safe
    — it's a no-op once the formula is already at that version.
 
 ## Caveats to remember

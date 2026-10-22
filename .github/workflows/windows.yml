@@ -1,5 +1,5 @@
 # Windows build: compile signal on every push/PR, and on a tag it packages a
-# self-contained zip (editxr.exe + the Swift Windows runtime DLLs) and attaches
+# self-contained zip (kme.exe + the Swift Windows runtime DLLs) and attaches
 # it to that tag's draft GitHub release.
 #
 # x64 only. The x86_64 build runs on Intel/AMD *and* on Windows on ARM via the
@@ -52,9 +52,9 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $name = "editxr-${{ steps.ver.outputs.version }}-windows-x64"
+          $name = "kme-${{ steps.ver.outputs.version }}-windows-x64"
           New-Item -ItemType Directory -Force $name | Out-Null
-          Copy-Item .build\release\editxr.exe $name\
+          Copy-Item .build\release\kme.exe $name\
           $core = where.exe swiftCore.dll 2>$null | Select-Object -First 1
           if (-not $core) { throw "swiftCore.dll not found on PATH" }
           Write-Host "Swift runtime dir: $(Split-Path $core)"
@@ -65,8 +65,8 @@ jobs:
       - name: Upload workflow artifact (for testing)
         uses: actions/upload-artifact@v4
         with:
-          name: editxr-windows-x64
-          path: editxr-*-windows-x64.zip
+          name: kme-windows-x64
+          path: kme-*-windows-x64.zip
 
       - name: Attach to draft release
         if: startsWith(github.ref, 'refs/tags/')
@@ -74,4 +74,4 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          files: editxr-*-windows-x64.zip
+          files: kme-*-windows-x64.zip

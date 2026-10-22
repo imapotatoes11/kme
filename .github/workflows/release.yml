@@ -51,7 +51,7 @@ jobs:
       - name: Upload workflow artifacts (for testing)
         uses: actions/upload-artifact@v4
         with:
-          name: editxr-linux-${{ steps.ver.outputs.version }}
+          name: kme-linux-${{ steps.ver.outputs.version }}
           path: dist/*.tar.gz
 
       # Created as a draft so it doesn't become "latest" (which install.sh reads)
