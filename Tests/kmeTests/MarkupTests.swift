@@ -63,3 +63,40 @@ final class MarkupTests: XCTestCase {
                        "the heading marker must be hidden: '\(headingRow)'")
     }
 }
+
+// MARK: - Backslash escapes
+
+final class EscapeTests: XCTestCase {
+
+    func testEscapedAsterisksDoNotCreateItalic() {
+        let spans = MarkdownLineParser.parse("a \\*not italic\\* b")
+        XCTAssertFalse(spans.contains { $0.kind == .italic })
+        XCTAssertEqual(spans.filter { $0.kind == .escape }.count, 2)
+    }
+
+    func testEscapeSpanHidesBackslashAndKeepsLiteral() {
+        let spans = MarkdownLineParser.parse("x\\*y")
+        XCTAssertEqual(spans.count, 1)
+        XCTAssertEqual(spans[0].kind, .escape)
+        XCTAssertEqual(spans[0].content, "*")
+        XCTAssertEqual(spans[0].leadLength, 1)
+        XCTAssertEqual(spans[0].tailLength, 0)
+    }
+
+    func testEscapedStarDoesNotCloseBold() {
+        let spans = MarkdownLineParser.parse("**a\\**b**")
+        let bold = spans.first { $0.kind == .bold }
+        XCTAssertEqual(bold?.content, "a\\**b")
+    }
+
+    func testBackslashBeforeLetterIsLiteral() {
+        XCTAssertTrue(MarkdownLineParser.parse("C:\\Users\\me").isEmpty)
+    }
+
+    func testHTMLExportUnescapes() {
+        let html = MarkdownHTML.render(["1 \\* 2 \\* 3 and \\*literal\\*"])
+        XCTAssertTrue(html.contains("1 * 2 * 3 and *literal*"))
+        XCTAssertFalse(html.contains("<em>"))
+        XCTAssertFalse(html.contains("\\*"))
+    }
+}

@@ -3063,6 +3063,7 @@ class EditorApp {
                     // No static underline — the OSC 8 wrapper below makes the
                     // terminal draw it on Cmd-hover, like Claude Code's links.
                     case .link: style = Theme.accent
+                    case .escape: style = ""
                     }
                     break
                 }
@@ -3415,6 +3416,7 @@ class EditorApp {
             // No static underline: the OSC 8 wrapper below makes the terminal
             // draw it on Cmd-hover, the way Claude Code's links behave.
             case .link: style = Theme.accent
+            case .escape: style = ""
             }
 
             // Wrap a link's display text in an OSC 8 hyperlink so the terminal

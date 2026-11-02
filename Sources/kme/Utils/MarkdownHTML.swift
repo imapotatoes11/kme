@@ -261,6 +261,12 @@ enum MarkdownHTML {
         while i < n {
             let c = chars[i]
 
+            if MarkdownLineParser.isEscape(chars, at: i) {
+                out += escape(String(chars[i + 1]))
+                i += 2
+                continue
+            }
+
             if c == "`" {
                 if let close = firstIndex(of: "`", in: chars, from: i + 1) {
                     out += "<code>\(escape(String(chars[i + 1..<close])))</code>"
@@ -304,6 +310,7 @@ enum MarkdownHTML {
     private static func firstSingle(of ch: Character, in chars: [Character], from: Int) -> Int? {
         var i = from
         while i < chars.count {
+            if MarkdownLineParser.isEscape(chars, at: i) { i += 2; continue }
             if chars[i] == ch && !(i + 1 < chars.count && chars[i + 1] == ch)
                 && !(i > from && chars[i - 1] == ch) { return i }
             i += 1
@@ -313,7 +320,11 @@ enum MarkdownHTML {
 
     private static func firstDouble(of ch: Character, in chars: [Character], from: Int) -> Int? {
         var i = from
-        while i + 1 < chars.count { if chars[i] == ch && chars[i + 1] == ch { return i }; i += 1 }
+        while i + 1 < chars.count {
+            if MarkdownLineParser.isEscape(chars, at: i) { i += 2; continue }
+            if chars[i] == ch && chars[i + 1] == ch { return i }
+            i += 1
+        }
         return nil
     }
 

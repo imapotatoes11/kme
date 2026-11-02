@@ -8,6 +8,7 @@ enum SpanKind {
     case heading2
     case heading3
     case link        // [text](url) or [[wiki]] — content is the display text
+    case escape      // \* — the backslash is hidden, content is the literal character
 }
 
 struct MarkdownSpan {
@@ -41,6 +42,14 @@ struct MarkdownLineParser {
         var i = 0
         
         while i < chars.count {
+            if isEscape(chars, at: i) {
+                spans.append(MarkdownSpan(kind: .escape, rawStart: i, rawEnd: i + 2,
+                                          contentStart: i + 1, contentEnd: i + 2,
+                                          content: String(chars[i + 1])))
+                i += 2
+                continue
+            }
+
             if i + 1 < chars.count && chars[i] == "*" && chars[i + 1] == "*" {
                 if let span = parseBold(chars: chars, startIndex: i) {
                     spans.append(span)
@@ -79,6 +88,17 @@ struct MarkdownLineParser {
         return spans
     }
     
+    /// Characters a backslash can escape (the CommonMark ASCII punctuation set).
+    static func isEscapable(_ c: Character) -> Bool {
+        guard c.isASCII else { return false }
+        return c.isPunctuation || c.isSymbol
+    }
+
+    /// True when `chars[i]` is a backslash escaping the character after it.
+    static func isEscape(_ chars: [Character], at i: Int) -> Bool {
+        i + 1 < chars.count && chars[i] == "\\" && isEscapable(chars[i + 1])
+    }
+
     static func isCodeBlockDelimiter(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         return trimmed.hasPrefix("```")
@@ -114,6 +134,7 @@ struct MarkdownLineParser {
         // Find closing **
         var i = startIndex + 2
         while i + 1 < chars.count {
+            if isEscape(chars, at: i) { i += 2; continue }
             if chars[i] == "*" && chars[i + 1] == "*" {
                 let contentStart = startIndex + 2
                 let contentEnd = i
@@ -141,6 +162,7 @@ struct MarkdownLineParser {
         // Find closing * (but not **)
         var i = startIndex + 1
         while i < chars.count {
+            if isEscape(chars, at: i) { i += 2; continue }
             if chars[i] == "*" && (i + 1 >= chars.count || chars[i + 1] != "*") {
                 let contentStart = startIndex + 1
                 let contentEnd = i
