@@ -17,6 +17,7 @@ final class LinkWrapTests: XCTestCase {
         let state = EditorState(filePath: tmp)
         state.wordWrap = true
         state.blockMode = false
+        state.showLineNumbers = true
         state.document.cursorLine = max(0, min(cursorLine, state.document.lines.count - 1))
         state.document.cursorColumn = 0
         return EditorApp(states: [state])
